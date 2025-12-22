@@ -120,7 +120,7 @@ class PDFSplitter:
         """將 PDF 切成單頁文件"""
         
         print(f"\n{'='*80}")
-        print(f"📄 分割 PDF：{pdf_path}")
+        print(f"分割 PDF：{pdf_path}")
         print(f"{'='*80}")
         
         pdf = fitz.open(pdf_path)
@@ -144,7 +144,7 @@ class PDFSplitter:
         
         pdf.close()
         
-        print(f"✓ 分頁完成！文件保存在：{self.temp_dir}")
+        print(f"分頁完成！文件保存在：{self.temp_dir}")
         
         return page_files
     
@@ -157,7 +157,7 @@ class PDFSplitter:
 
 # ========== Docling 解析器 ==========
 class DoclingParser:
-    """Docling PDF 解析器（分頁版）"""
+    """Docling PDF 解析器（分頁）"""
     
     def __init__(self, config: DoclingRAGConfig):
         self.config = config
@@ -186,7 +186,7 @@ class DoclingParser:
             }
         )
         
-        print(f"✓ Docling 已初始化（OCR: {self.config.enable_ocr}）")
+        print(f"Docling 已初始化（OCR: {self.config.enable_ocr}）")
     
     def get_pdf_hash(self, pdf_path: str) -> str:
         """計算 PDF hash"""
@@ -211,11 +211,11 @@ class DoclingParser:
         """解析 PDF（分頁處理）+ 計算 embeddings"""
         
         if not self.should_reparse(pdf_path):
-            print("📂 載入快取...")
+            print("載入快取...")
             return self.load_cache()
         
         print(f"\n{'='*80}")
-        print(f"📖 解析 PDF（分頁處理模式）")
+        print(f"解析 PDF（分頁處理模式）")
         print(f"{'='*80}")
         
         start = time.time()
@@ -235,7 +235,7 @@ class DoclingParser:
         self._print_stats(pages_content)
         
         # 計算 embeddings
-        print(f"\n📊 計算頁面 embeddings（首次建立，之後會快取）...")
+        print(f"\n計算頁面 embeddings（首次建立，之後會快取）...")
         embeddings = self._compute_embeddings(pages_content)
         
         # 保存快取（含 embeddings）
@@ -255,7 +255,7 @@ class DoclingParser:
             convert_to_numpy=True
         )
         
-        print(f"✓ Embeddings 計算完成")
+        print(f"Embeddings完成")
         return embeddings
     
     def _process_pages(self, page_files: List[Tuple[int, str]]) -> List[PageContent]:
@@ -271,7 +271,7 @@ class DoclingParser:
                 if content:
                     pages.append(content)
             except Exception as e:
-                print(f"\n⚠️ 頁面 {page_no} 處理失敗：{e}")
+                print(f"\n頁面 {page_no} 處理失敗：{e}")
         
         return pages
     
@@ -295,20 +295,20 @@ class DoclingParser:
     
     def _save_cache(self, pages: List[PageContent], pdf_path: str, embeddings: Optional[np.ndarray] = None):
         """保存快取（包含 embeddings）"""
-        print(f"\n💾 保存快取到：{self.cache_file}")
+        print(f"\n保存快取到：{self.cache_file}")
         
         data = {
             'pdf_path': pdf_path,
             'pdf_hash': self.get_pdf_hash(pdf_path),
             'parsed_at': datetime.now().isoformat(),
             'pages': [p.to_dict() for p in pages],
-            'embeddings': embeddings  # 新增：儲存 embeddings
+            'embeddings': embeddings
         }
         
         with open(self.cache_file, 'wb') as f:
             pickle.dump(data, f)
         
-        print("✓ 快取已保存（含 embeddings）")
+        print("快取已保存（含 embeddings）")
     
     def load_cache(self) -> Tuple[List[PageContent], Optional[np.ndarray]]:
         """載入快取（包含 embeddings）"""
@@ -318,9 +318,9 @@ class DoclingParser:
         pages = [PageContent.from_dict(p) for p in data['pages']]
         embeddings = data.get('embeddings', None)
         
-        print(f"✓ 載入 {len(pages)} 頁")
+        print(f"載入 {len(pages)} 頁")
         if embeddings is not None:
-            print(f"✓ 載入預計算的 embeddings")
+            print(f"載入預計算的 embeddings")
         self._print_stats(pages)
         
         return pages, embeddings
@@ -328,7 +328,7 @@ class DoclingParser:
     def _print_stats(self, pages: List[PageContent]):
         """打印統計"""
         if not pages:
-            print("⚠️ 沒有頁面！")
+            print("沒有頁面")
             return
         
         total_chars = sum(p.text_length for p in pages)
@@ -341,15 +341,15 @@ class DoclingParser:
                 if i not in page_nos:
                     missing_pages.append(i)
         
-        print(f"\n📊 統計：")
-        print(f"  - 總頁數：{len(pages)}")
-        print(f"  - 頁碼範圍：{page_nos[0]} ~ {page_nos[-1]}")
+        print(f"\n統計：")
+        print(f"總頁數：{len(pages)}")
+        print(f"頁碼範圍：{page_nos[0]} ~ {page_nos[-1]}")
         if missing_pages:
-            print(f"  - ⚠️ 缺失頁：{missing_pages}")
+            print(f"缺失頁：{missing_pages}")
         else:
-            print(f"  - ✓ 頁碼連續完整")
-        print(f"  - 總字數：{total_chars:,}")
-        print(f"  - 平均每頁：{avg_chars:.0f} 字")
+            print(f"頁碼連續完整")
+        print(f"總字數：{total_chars:,}")
+        print(f"平均每頁：{avg_chars:.0f} 字")
 
 # ========== Query 擴展 ==========
 class QueryExpander:
@@ -368,7 +368,7 @@ class QueryExpander:
                 "expanded_query": query
             }
         
-        print(f"\n🔍 擴展查詢：「{query}」")
+        print(f"\n擴展查詢：「{query}」")
         
         try:
             response = client.chat.completions.create(
@@ -386,7 +386,7 @@ class QueryExpander:
             keywords = result.get("keywords", [])
             expanded = f"{query} {' '.join(keywords)}" if keywords else query
             
-            print(f"  ✓ 關鍵詞：{', '.join(keywords)}")
+            print(f"關鍵詞：{', '.join(keywords)}")
             
             return {
                 "original_query": query,
@@ -394,7 +394,7 @@ class QueryExpander:
                 "expanded_query": expanded
             }
         except Exception as e:
-            print(f"  ⚠️ 擴展失敗：{e}")
+            print(f"擴展失敗：{e}")
             return {
                 "original_query": query,
                 "keywords": [],
@@ -414,17 +414,17 @@ def search_with_hybrid_device(
     2. Reranker MPS 精排（快速）
     """
     
-    print(f"\n🔍 混合設備檢索...")
-    print(f"  - 總頁數：{len(pages)}")
+    print(f"\n混合設備檢索...")
+    print(f"總頁數：{len(pages)}")
     
     start = time.time()
     
     # ========== 階段 1: Embedding 初篩（使用預計算 embeddings）==========
     if config.enable_embedding_filter and len(pages) > config.max_embedding_candidates:
-        print(f"\n  📊 階段 1: Embedding 初篩（使用快取，前 {config.max_embedding_candidates} 頁）")
+        print(f"\n階段 1: Embedding 初篩（使用快取，前 {config.max_embedding_candidates} 頁）")
         
         # 只需要編碼 query（1 秒內！）
-        print(f"    - 編碼查詢...")
+        print(f"編碼查詢...")
         query_embedding = embedding_model.encode(
             [query],
             normalize_embeddings=True,
@@ -432,22 +432,22 @@ def search_with_hybrid_device(
         )[0]
         
         # 使用預計算的頁面 embeddings 計算相似度
-        print(f"    - 使用預計算的頁面 embeddings 計算相似度...")
+        print(f"使用預計算的頁面 embeddings 計算相似度...")
         similarities = page_embeddings @ query_embedding
         
         # 取前 N 個候選
         top_indices = np.argsort(-similarities)[:config.max_embedding_candidates]
         candidate_pages = [pages[i] for i in top_indices]
         
-        print(f"    ✓ 篩選出 {len(candidate_pages)} 個候選頁面")
-        print(f"    - Embedding Top 10 頁碼：{[pages[i].page_no for i in top_indices[:10]]}")
+        print(f"篩選出 {len(candidate_pages)} 個候選頁面")
+        print(f"Embedding Top 10 頁碼：{[pages[i].page_no for i in top_indices[:10]]}")
         
     else:
         candidate_pages = pages
-        print(f"  - 跳過 embedding 初篩（頁數較少）")
+        print(f"跳過 embedding 初篩（頁數較少）")
     
     # ========== 階段 2: Reranker MPS 精排 ==========
-    print(f"\n  🎯 階段 2: Reranker 精排 ({reranker_device.upper()})（{len(candidate_pages)} 頁）")
+    print(f"\n階段 2: Reranker 精排 ({reranker_device.upper()})（{len(candidate_pages)} 頁）")
     
     # 清理 MPS 顯存
     if reranker_device == "mps":
@@ -457,7 +457,7 @@ def search_with_hybrid_device(
     pairs = [(query, page.content) for page in candidate_pages]
     
     # Reranker 打分
-    print(f"    - 計算精確相關性分數...")
+    print(f"計算精確相關性分數...")
     scores = reranker.predict(
         pairs,
         batch_size=config.reranker_batch_size,
@@ -479,16 +479,16 @@ def search_with_hybrid_device(
     elapsed = time.time() - start
     
     # 顯示統計
-    print(f"\n  ✓ 檢索完成！總耗時：{elapsed:.2f} 秒")
-    print(f"  - 速度：{len(pages) / elapsed:.1f} 頁/秒")
-    print(f"  - 最高分：{page_scores[0][1]:.4f}")
-    print(f"  - 最低分：{page_scores[-1][1]:.4f}")
-    print(f"  - 平均分：{np.mean(scores):.4f}")
+    print(f"\n檢索完成！總耗時：{elapsed:.2f} 秒")
+    print(f"速度：{len(pages) / elapsed:.1f} 頁/秒")
+    print(f"最高分：{page_scores[0][1]:.4f}")
+    print(f"最低分：{page_scores[-1][1]:.4f}")
+    print(f"平均分：{np.mean(scores):.4f}")
     
     # 顯示前幾名
-    print(f"\n  📊 Top {min(config.show_top_scores, len(top_pages))} 頁面：")
+    print(f"\nTop {min(config.show_top_scores, len(top_pages))} 頁面：")
     for i, (page, score) in enumerate(top_pages[:config.show_top_scores], 1):
-        print(f"    {i:2d}. 第 {page.page_no:3d} 頁 - {score:.4f}")
+        print(f"{i:2d}. 第 {page.page_no:3d} 頁 - {score:.4f}")
     
     return top_pages
 
@@ -514,7 +514,7 @@ class RAG:
                 "tokens_used": 0
             }
         
-        print(f"\n🤖 生成回答...")
+        print(f"\n生成回答...")
         
         # 構建 context
         context = "\n\n".join([
@@ -564,13 +564,13 @@ class DoclingRAGSystem:
         self.rag = RAG(config)
         
         self.pages = None
-        self.page_embeddings = None  # 新增：儲存預計算的 embeddings
+        self.page_embeddings = None  
         self.history = []
     
     def initialize(self):
         """初始化"""
         print("="*80)
-        print("🚀 初始化 Docling RAG 系統（混合設備版 + 預計算 embeddings）")
+        print("初始化 Docling RAG 系統（混合設備版 + 預計算 embeddings）")
         print("="*80)
         
         # 解析 PDF 並計算/載入 embeddings
@@ -578,32 +578,32 @@ class DoclingRAGSystem:
         
         # 檢查是否需要計算 embeddings
         if self.page_embeddings is None:
-            print(f"\n⚠️ 偵測到舊版快取，正在計算 embeddings...")
+            print(f"\n偵測到舊版快取，正在計算 embeddings...")
             self.page_embeddings = self.parser._compute_embeddings(self.pages)
             
             # 更新快取
-            print(f"💾 更新快取（新增 embeddings）...")
+            print(f"更新快取（新增 embeddings）...")
             self.parser._save_cache(
                 self.pages, 
                 self.config.pdf_path, 
                 self.page_embeddings
             )
-            print(f"✓ 快取已更新")
+            print(f"快取已更新")
         
-        print(f"\n✓ 系統就緒！")
-        print(f"  - 模式：Embedding (CPU) + Reranker ({reranker_device.upper()})")
-        print(f"  - Embedding：BAAI/bge-m3 on CPU（預計算並快取）")
-        print(f"  - Reranker：BAAI/bge-reranker-v2-m3 on {reranker_device.upper()}（快速）")
-        print(f"  - 總頁數：{len(self.pages)}")
-        print(f"  - Embeddings：已預計算並快取（查詢時只需編碼 query，<1秒）")
+        print(f"\n系統就緒！")
+        print(f"模式：Embedding (CPU) + Reranker ({reranker_device.upper()})")
+        print(f"Embedding：BAAI/bge-m3 on CPU（預計算並快取）")
+        print(f"Reranker：BAAI/bge-reranker-v2-m3 on {reranker_device.upper()}（快速）")
+        print(f"總頁數：{len(self.pages)}")
+        print(f"Embeddings：已預計算並快取（查詢時只需編碼 query，<1秒）")
         if self.config.enable_embedding_filter:
-            print(f"  - 檢索策略：{len(self.pages)} 頁 → Embedding 快速篩選 {self.config.max_embedding_candidates} 頁 → Reranker {reranker_device.upper()} 精排 {self.config.max_final_pages} 頁")
+            print(f"檢索策略：{len(self.pages)} 頁 → Embedding 快速篩選 {self.config.max_embedding_candidates} 頁 → Reranker {reranker_device.upper()} 精排 {self.config.max_final_pages} 頁")
     
     def query(self, question: str) -> Dict:
         """查詢"""
         
         print("\n" + "="*80)
-        print(f"📝 {question}")
+        print(f"{question}")
         print("="*80)
         
         start = time.time()
@@ -656,7 +656,7 @@ def main():
     system = DoclingRAGSystem(config)
     system.initialize()
     
-    print("\n💡 輸入問題（'q' 離開）")
+    print("\n輸入問題（'q' 離開）")
     print("-"*80)
     
     while True:
@@ -671,14 +671,14 @@ def main():
         result = system.query(question)
         
         print("\n" + "="*80)
-        print("📋 回答")
+        print("回答")
         print("="*80)
         print(f"\n{result['answer']}")
         
-        print(f"\n📊 統計：")
-        print(f"  - 使用頁面：{[p['page_no'] for p in result['pages_used'][:10]]}")
-        print(f"  - Token：{result['tokens_used']:,}")
-        print(f"  - 時間：{result['total_time']}")
+        print(f"\n統計：")
+        print(f"使用頁面：{[p['page_no'] for p in result['pages_used'][:10]]}")
+        print(f"Token：{result['tokens_used']:,}")
+        print(f"時間：{result['total_time']}")
 
 if __name__ == "__main__":
     main()
