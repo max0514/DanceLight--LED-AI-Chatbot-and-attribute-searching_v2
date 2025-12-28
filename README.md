@@ -1,4 +1,4 @@
-# DanceLight LED - AI Customer Service System and Model Search Platform
+# DanceLight - LED AI RAG Chatbot and attribute searching
 
 ## Project Description
 
@@ -45,10 +45,9 @@ pip install -r requirements.txt
 
 3. **Configure OpenAI API Key**
 
-Edit the `docling_rag_v5.py` file, replace `YOUR_OPENAI_API_KEY` on line 69 with your actual API key:
-
-```python
-client = OpenAI(api_key="YOUR_OPENAI_API_KEY")
+   Edit `.env` and replace with your actual API key:
+```
+   OPENAI_API_KEY=sk-your-api-key-here
 ```
 
 4. **Prepare Product Catalog PDF**
@@ -166,8 +165,8 @@ User Receives Answer
 
 ## Contributors
 
-- **陳昊軒** - PM, responsible for AI customer service chatbot
-- **陳為政** - Responsible for AI customer service chatbot
+- **陳昊暄** - PM, responsible for AI RAG chatbot
+- **陳為政** - Responsible for AI RAG chatbot
 - **何承澔** - Frontend page integration
 - **高毅峻** - Model attribute search
 
