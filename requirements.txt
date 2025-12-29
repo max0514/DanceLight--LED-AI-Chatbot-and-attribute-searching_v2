@@ -1,0 +1,14 @@
+PyQt5
+
+numpy>=1.24
+tqdm>=4.66
+
+pymupdf>=1.23
+docling>=0.1.7
+
+torch>=2.1
+sentence-transformers>=2.6
+
+openai>=1.30.0
+typing-extensions>=4.9
+
