@@ -1,1 +1,69 @@
+# ===============================
+# Python
+# ===============================
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.env
+.venv
 venv/
+ENV/
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# ===============================
+# Jupyter Notebook
+# ===============================
+.ipynb_checkpoints/
+*.nbconvert.ipynb
+
+# Optional: ignore all notebooks (uncomment if needed)
+# *.ipynb
+
+# ===============================
+# Data / Outputs (recommended)
+# ===============================
+data/
+outputs/
+results/
+figures/
+plots/
+
+# ===============================
+# Logs & temporary files
+# ===============================
+*.log
+*.tmp
+*.swp
+*.bak
+
+# ===============================
+# OS / Editor
+# ===============================
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# ===============================
+# LaTeX (if writing papers)
+# ===============================
+*.aux
+*.bbl
+*.blg
+*.out
+*.toc
+*.synctex.gz
+*.fls
+*.fdb_latexmk
+
+# ===============================
+# Others
+# ===============================
+.env.*
