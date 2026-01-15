@@ -4,12 +4,12 @@ import os
 import torch
 from PyQt5 import QtCore, QtGui, QtWidgets
 
-# 導入 RAG 類別與配置
-from docling_rag_v5 import DoclingRAGSystem, DoclingRAGConfig
+# FIX 1: Corrected imports to match docling_rag_v5.py
+from docling_rag_v5 import RAGSystem, Config
 
-# ---------- 後台運算執行緒 ----------
+# ---------- Background Worker Thread ----------
 class RAGWorker(QtCore.QThread):
-    """處理 AI 檢索與回答，避免介面卡頓"""
+    """Handles AI retrieval and generation in the background to prevent UI freezing."""
     answer_ready = QtCore.pyqtSignal(dict)
 
     def __init__(self, rag_system, question):
@@ -18,11 +18,10 @@ class RAGWorker(QtCore.QThread):
         self.question = question
 
     def run(self):
-        # 呼叫 docling_rag_v5 裡的 query 功能
         result = self.rag_system.query(self.question)
         self.answer_ready.emit(result)
 
-# ---------- 介面佈局類別 ----------
+# ---------- UI Layout Class ----------
 class Ui_AIChatWindow(object):
     def setupUi(self, AIChatWindow):
         AIChatWindow.setObjectName("AIChatWindow")
@@ -33,7 +32,7 @@ class Ui_AIChatWindow(object):
         self.verticalLayout.setContentsMargins(15, 15, 15, 15)
         self.verticalLayout.setSpacing(10)
 
-        # 頂部欄
+        # Top Navigation Bar
         self.top_button_frame = QtWidgets.QFrame(self.centralwidget)
         self.top_button_layout = QtWidgets.QHBoxLayout(self.top_button_frame)
         
@@ -42,7 +41,13 @@ class Ui_AIChatWindow(object):
         self.back_home_button.setFixedSize(160, 60)
         
         self.logo_label = QtWidgets.QLabel()
-        self.logo_label.setPixmap(QtGui.QPixmap("dancelight_logo.jpg"))
+        # Ensure 'dancelight_logo.jpg' exists in the same folder
+        if os.path.exists("dancelight_logo.jpg"):
+            self.logo_label.setPixmap(QtGui.QPixmap("dancelight_logo.jpg"))
+        else:
+            self.logo_label.setText("DanceLight")
+            self.logo_label.setAlignment(QtCore.Qt.AlignCenter)
+            
         self.logo_label.setScaledContents(True)
         self.logo_label.setFixedSize(120, 60)
         
@@ -57,7 +62,7 @@ class Ui_AIChatWindow(object):
         self.top_button_layout.addWidget(self.go_model_button)
         self.verticalLayout.addWidget(self.top_button_frame)
 
-        # 聊天顯示區
+        # Chat Display Area
         self.chat_display = QtWidgets.QScrollArea(self.centralwidget)
         self.chat_display.setObjectName("chat_display")
         self.chat_display.setWidgetResizable(True)
@@ -67,10 +72,11 @@ class Ui_AIChatWindow(object):
         self.chat_display.setWidget(self.chat_display_content)
         self.verticalLayout.addWidget(self.chat_display)
 
-        # 輸入區
+        # Input Area
         self.input_frame = QtWidgets.QFrame(self.centralwidget)
         self.input_frame.setObjectName("input_frame")
         self.input_layout = QtWidgets.QHBoxLayout(self.input_frame)
+        self.input_layout.setContentsMargins(5, 5, 5, 5) # Padding for the frame
         
         self.input_text = QtWidgets.QLineEdit()
         self.input_text.setPlaceholderText("系統初始化中...")
@@ -83,61 +89,128 @@ class Ui_AIChatWindow(object):
         self.verticalLayout.addWidget(self.input_frame)
         AIChatWindow.setCentralWidget(self.centralwidget)
 
-# ---------- 主程式邏輯 ----------
+# ---------- Main Logic ----------
 class AIChatPage(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
         self.ui = Ui_AIChatWindow()
         self.ui.setupUi(self)
         
-        # 1. 載入 QSS 樣式
         self.load_qss()
 
-        # 2. 初始介面狀態
+        # Initial State
         self.ui.input_text.setEnabled(False)
         self.ui.send_button.setEnabled(False)
 
-        # 3. 綁定按鈕事件
+        # Events
         self.ui.send_button.clicked.connect(self.send_message)
-        self.ui.input_text.returnPressed.connect(self.send_message) # 按下 Enter 也能發送
+        self.ui.input_text.returnPressed.connect(self.send_message)
+        self.ui.back_home_button.clicked.connect(self.go_home)
 
-        # 4. 延遲載入 RAG (讓視窗先出現)
+        # Delay RAG loading so window appears first
         QtCore.QTimer.singleShot(100, self.init_rag_after_show)
 
     def load_qss(self):
-        # 這裡直接嵌入你提供的 QSS 內容
+        # FIX 2: Added min-height and color to QLineEdit to fix Mac display issue
         qss = """
-        QWidget { background-color: white; font-family: "Microsoft JhengHei"; font-size: 16px; }
-        #chat_display { background-color: #f7f7f7; border-radius: 12px; padding: 10px; border: 1px solid #e0e0e0; }
-        QWidget#chat_display_content { background-color: #f7f7f7; }
-        .user_message { background-color: #185ca1; color: white; border-radius: 12px; padding: 8px 12px; margin: 5px; }
-        .ai_message { background-color: #f17039; color: white; border-radius: 12px; padding: 8px 12px; margin: 5px; }
-        #input_frame { background-color: #ffffff; border-radius: 12px; border: 1px solid #cccccc; padding: 8px; }
-        QLineEdit { border: none; font-size: 16px; padding: 6px; }
-        #send_button { background-color: #185ca1; color: white; border-radius: 12px; padding: 8px 16px; font-weight: bold; }
-        #send_button:hover { background-color: #f17039; }
-        #back_home_button, #go_model_button { background-color: white; color: #185ca1; border: 2px solid #185ca1; border-radius: 8px; font-size: 18px; font-weight: bold; }
-        #back_home_button:hover, #go_model_button:hover { color: #f17039; border-color: #f17039; }
+        QWidget { 
+            background-color: white; 
+            font-family: ".AppleSystemUIFont", "Arial", sans-serif; 
+            font-size: 16px; 
+        }
+        
+        #chat_display { 
+            background-color: #f7f7f7; 
+            border-radius: 12px; 
+            padding: 10px; 
+            border: 1px solid #e0e0e0; 
+        }
+        
+        QWidget#chat_display_content { 
+            background-color: #f7f7f7; 
+        }
+        
+        .user_message { 
+            background-color: #185ca1; 
+            color: white; 
+            border-radius: 12px; 
+            padding: 8px 12px; 
+            margin: 5px; 
+        }
+        
+        .ai_message { 
+            background-color: #f17039; 
+            color: white; 
+            border-radius: 12px; 
+            padding: 8px 12px; 
+            margin: 5px; 
+        }
+        
+        #input_frame { 
+            background-color: #ffffff; 
+            border-radius: 25px; 
+            border: 2px solid #cccccc; 
+            padding: 5px; 
+        }
+        
+        QLineEdit { 
+            border: none; 
+            font-size: 16px; 
+            padding: 6px; 
+            color: black;         /* Fix: Make text visible */
+            min-height: 30px;     /* Fix: Prevent collapse on Mac */
+            background-color: transparent;
+        }
+        
+        #send_button { 
+            background-color: #185ca1; 
+            color: white; 
+            border-radius: 20px; 
+            padding: 8px 20px; 
+            font-weight: bold; 
+        }
+        #send_button:hover { 
+            background-color: #f17039; 
+        }
+        
+        #back_home_button, #go_model_button { 
+            background-color: white; 
+            color: #185ca1; 
+            border: 2px solid #185ca1; 
+            border-radius: 8px; 
+            font-size: 18px; 
+            font-weight: bold; 
+        }
+        #back_home_button:hover, #go_model_button:hover { 
+            color: #f17039; 
+            border-color: #f17039; 
+        }
         """
         self.setStyleSheet(qss)
 
     def init_rag_after_show(self):
-        """初始化 RAG 系統"""
+        """Initialize RAG System"""
         print("正在載入 RAG 系統與模型...")
-        config = DoclingRAGConfig(
-            pdf_path="2025舞光LED21st(單頁水印可搜尋).pdf",
-            enable_ocr=True,
-            enable_query_expansion=False
-        )
-        self.rag_system = DoclingRAGSystem(config)
-        self.rag_system.initialize()
-        
-        # 解鎖介面
-        self.ui.input_text.setEnabled(True)
-        self.ui.send_button.setEnabled(True)
-        self.ui.input_text.setPlaceholderText("請輸入訊息...")
-        self.ai_reply("您好！我是舞光 LED 客服 AI。已經為您載入最新 2025 型錄，請問想找什麼燈具嗎？")
-        print("系統就緒")
+        try:
+            # FIX 1: Using correct Config class name
+            config = Config(
+                pdf_path="2025舞光LED21st(單頁水印可搜尋).pdf",
+                enable_ocr=True,
+                enable_query_expansion=False
+            )
+            # FIX 1: Using correct RAGSystem class name
+            self.rag_system = RAGSystem(config)
+            self.rag_system.initialize()
+            
+            self.ui.input_text.setEnabled(True)
+            self.ui.send_button.setEnabled(True)
+            self.ui.input_text.setPlaceholderText("請輸入訊息...")
+            self.ai_reply("您好！我是舞光 LED 客服 AI。已經為您載入最新 2025 型錄，請問想找什麼燈具嗎？")
+            print("系統就緒")
+            
+        except Exception as e:
+            print(f"Error initializing RAG: {e}")
+            self.ai_reply(f"系統錯誤: {str(e)}")
 
     def send_message(self):
         msg = self.ui.input_text.text().strip()
@@ -147,16 +220,18 @@ class AIChatPage(QtWidgets.QMainWindow):
             self.ui.send_button.setEnabled(False)
             self.ui.input_text.setPlaceholderText("AI 正在檢索 388 頁型錄中...")
 
-            # 啟動背景執行緒
             self.worker = RAGWorker(self.rag_system, msg)
             self.worker.answer_ready.connect(self.handle_ai_response)
             self.worker.start()
 
     def go_home(self):
-        from homePage import MainWindow
-        self.home_window = MainWindow()
-        self.home_window.show()
-        self.close()
+        try:
+            from homePage import MainWindow
+            self.home_window = MainWindow()
+            self.home_window.show()
+            self.close()
+        except ImportError:
+            print("Cannot find homePage.py")
     
     def handle_ai_response(self, result):
         self.ui.send_button.setEnabled(True)
@@ -180,7 +255,6 @@ class AIChatPage(QtWidgets.QMainWindow):
         h_layout.addWidget(label)
         self.ui.chat_display_layout.addLayout(h_layout)
         
-        # 強制滾動到底部
         QtCore.QTimer.singleShot(50, lambda: self.ui.chat_display.verticalScrollBar().setValue(
             self.ui.chat_display.verticalScrollBar().maximum()
         ))
@@ -195,7 +269,7 @@ class AIChatPage(QtWidgets.QMainWindow):
         h_layout.addStretch()
         self.ui.chat_display_layout.addLayout(h_layout)
 
-        # 打字機動畫
+        # Typewriter effect
         self.typing_index = 0
         self.typing_text = text
         self.typing_label = label

@@ -17,7 +17,8 @@ from tqdm import tqdm
 from docling.document_converter import DocumentConverter, PdfFormatOption
 from docling.datamodel.base_models import InputFormat
 from docling.datamodel.pipeline_options import PdfPipelineOptions
-
+from dotenv import load_dotenv # Import the tool
+load_dotenv()                  # Trigger it to read your .env file
 
 @dataclass
 class Config:

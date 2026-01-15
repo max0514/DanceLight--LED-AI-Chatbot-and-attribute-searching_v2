@@ -87,7 +87,7 @@ class MainWindow(QtWidgets.QMainWindow):
         /* 整體背景 */
         QWidget {
             background-color: white;
-            font-family: "Microsoft JhengHei";
+            font-family: ".AppleSystemUIFont", "Arial", sans-serif;
         }
 
         /* 共用按鈕樣式 */
@@ -129,8 +129,10 @@ class MainWindow(QtWidgets.QMainWindow):
             self.close()  # 關閉首頁
         except ImportError:
             QtWidgets.QMessageBox.critical(self, "錯誤", "找不到 ai_chat_page.py 檔案！")
+            
         except Exception as e:
             QtWidgets.QMessageBox.critical(self, "錯誤", f"開啟失敗: {str(e)}")
+            print(e)
 
     def open_model_search(self):
         """開啟型號查詢頁面 (model_search_page.py)"""
@@ -146,7 +148,7 @@ if __name__ == "__main__":
     app = QtWidgets.QApplication(sys.argv)
     
     # 設定整個 App 的字體，確保簡體繁體不亂碼
-    font = QtGui.QFont("Microsoft JhengHei", 10)
+    font = QtGui.QFont("Arial", 10)
     app.setFont(font)
     
     window = MainWindow()
