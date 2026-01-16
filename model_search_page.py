@@ -163,7 +163,6 @@ class Ui_ModelSearchWindow(object):
         self.back_home_button.setFixedSize(120, 50)
         
         self.logo_label = QtWidgets.QLabel()
-        # 如果要換照片可以在這邊改
         logo_path = os.path.join(current_dir, "dancelight_logo.jpg")
         if os.path.exists(logo_path):
             self.logo_label.setPixmap(QtGui.QPixmap(logo_path))
@@ -188,7 +187,8 @@ class Ui_ModelSearchWindow(object):
 
         self.search_input = QtWidgets.QLineEdit()
         self.search_input.setPlaceholderText("輸入系列名稱 (例如: 米開朗)...")
-        self.search_input.setFixedHeight(50)
+        # Ensure height is sufficient
+        self.search_input.setMinimumHeight(50)
         self.search_input.setObjectName("search_input")
         
         self.search_button = QtWidgets.QPushButton("查詢")
@@ -281,9 +281,27 @@ class ModelSearchPage(QtWidgets.QMainWindow):
 
     def apply_style(self):
         qss = """
-        QWidget { background-color: white; font-family: "Microsoft JhengHei"; font-size: 15px; }
+        /* FIX 1: Set text color to dark gray globally to fix invisible text on Mac */
+        QWidget { 
+            background-color: white; 
+            font-family: ".AppleSystemUIFont", "Arial", sans-serif; 
+            font-size: 15px; 
+            color: #333333; 
+        }
         
-        QLineEdit { border: 2px solid #cccccc; border-radius: 8px; padding: 8px; }
+        /* FIX 2: Explicitly style labels to ensure visibility */
+        QLabel {
+            color: #333333;
+        }
+
+        /* FIX 3: Style the input box with border and height */
+        QLineEdit { 
+            border: 2px solid #cccccc; 
+            border-radius: 8px; 
+            padding: 8px; 
+            min-height: 30px; 
+            color: #333333;
+        }
         QLineEdit:focus { border: 2px solid #185ca1; }
         
         QPushButton { 
@@ -299,7 +317,12 @@ class ModelSearchPage(QtWidgets.QMainWindow):
         }
 
         QGroupBox { 
-            border: 1px solid #ddd; border-radius: 8px; margin-top: 10px; padding-top: 15px; font-weight: bold; color: #333;
+            border: 1px solid #ddd; 
+            border-radius: 8px; 
+            margin-top: 10px; 
+            padding-top: 15px; 
+            font-weight: bold; 
+            color: #333333; /* Ensure GroupBox title is visible */
         }
         QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 5px; }
 
@@ -382,12 +405,20 @@ class ModelSearchPage(QtWidgets.QMainWindow):
         title = f"{item.get('series', '')} {item.get('model', 'Unknown')}"
         lbl_title = QtWidgets.QLabel(title)
         lbl_title.setObjectName("result_title")
+        # ----------------------------------------------------
+        # FIX: Enable text selection
+        # ----------------------------------------------------
+        lbl_title.setTextInteractionFlags(Qt.TextSelectableByMouse)
         
         details = (f"瓦數: {item.get('watt')}W | 色溫: {item.get('cct')}K | "
                    f"光通量: {item.get('lumen')}lm | 光束角: {item.get('beam')}°")
         lbl_desc = QtWidgets.QLabel(details)
         lbl_desc.setObjectName("result_detail")
         lbl_desc.setWordWrap(True)
+        # ----------------------------------------------------
+        # FIX: Enable text selection
+        # ----------------------------------------------------
+        lbl_desc.setTextInteractionFlags(Qt.TextSelectableByMouse)
 
         text_layout.addWidget(lbl_title)
         text_layout.addWidget(lbl_desc)
@@ -397,6 +428,10 @@ class ModelSearchPage(QtWidgets.QMainWindow):
         lbl_price = QtWidgets.QLabel(f"${p_val}")
         lbl_price.setObjectName("result_price")
         lbl_price.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        # ----------------------------------------------------
+        # FIX: Enable text selection
+        # ----------------------------------------------------
+        lbl_price.setTextInteractionFlags(Qt.TextSelectableByMouse)
 
         layout.addWidget(img_label)
         layout.addLayout(text_layout)

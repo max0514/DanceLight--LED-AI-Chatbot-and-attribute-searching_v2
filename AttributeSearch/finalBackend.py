@@ -117,7 +117,12 @@ def filter_products(
             if not (lumen_lo <= l  <= lumen_hi):  continue
             if not (price_lo <= pr <= price_hi):  continue
 
-            # 整理回傳格式
+            # ----------------------------------------------------
+            # FIX: Ensure price is displayed as a number (int)
+            # instead of reading the dirty string "exact" from JSON
+            # ----------------------------------------------------
+            display_price = int(pr) if pr.is_integer() else pr
+
             result.append({
                 "series": p.get("series", ""),
                 "model": p.get("model", ""),
@@ -126,8 +131,8 @@ def filter_products(
                 "beam": b,
                 "lumen": l,
                 "price": pr,
-                # 保留原始字串
-                "price_from": str(p.get("price_from", pr) or pr), 
+                # We overwrite 'price_from' with our clean numeric price
+                "price_from": display_price, 
                 "voltage": p.get("voltage", ""),
                 "ip": p.get("ip", "")
             })
