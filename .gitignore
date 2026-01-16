@@ -75,3 +75,6 @@ __pycache__/
 
 # 忽略 Pickle 資料檔 (如果這是暫存資料)
 *.pkl
+
+#ignore pdf
+*.pdf
