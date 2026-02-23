@@ -78,3 +78,9 @@ __pycache__/
 
 #ignore pdf
 *.pdf
+
+*.ipynb_checkpoints/
+*.csv
+*.db
+*.bin
+*.sqlite3
