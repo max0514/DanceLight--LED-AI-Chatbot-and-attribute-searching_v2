@@ -1,0 +1,29 @@
+
+改text_splitter = RecursiveCharacterTextSplitter(chunk_size=800, chunk_overlap=300)
+改 model embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+改成reasoning model llm = ChatOpenAI(model_name="gpt-5.2", temperature=0)
+
+
+
+
+改成reasoning model gpt-5
+reasoning: low.   55s/response
+reasoning: medium.  1m/response
+
+改成reasoning model gpt-5.2
+reasoning: low.   9s/response
+reasoning: medium.  22m/response
+
+
+
+
+
+
+use local llm
+
+using llama 4
+
+
+
+改用多模態模型 切成3個資料 
+image, table, text
