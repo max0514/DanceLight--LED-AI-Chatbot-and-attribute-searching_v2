@@ -84,3 +84,4 @@ __pycache__/
 *.db
 *.bin
 *.sqlite3
+*.pickle
