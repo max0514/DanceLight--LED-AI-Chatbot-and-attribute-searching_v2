@@ -1,0 +1,22 @@
+# Secrets
+.env
+
+# Logs & outputs
+*.log
+rag_results*.xlsx
+
+# Python
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+*.ipynb
+*.bak
+
+# Large source data — must be obtained separately (see README)
+2025舞光LED21st*.pdf
+output_opendataloader
+output_opendataloader/
+
+# Virtualenv
+.venv/
+venv/

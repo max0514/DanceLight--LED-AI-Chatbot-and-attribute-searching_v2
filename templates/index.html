@@ -1,0 +1,518 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>舞光 LED 產品 RAG 查詢</title>
+<style>
+/* ── design tokens (ui-design plugin spec) ──────────────────────────── */
+:root {
+  /* palette */
+  --c-bg: #f6f7fb;
+  --c-surface: #ffffff;
+  --c-surface-muted: #f2f4f8;
+  --c-ink-900: #0f172a;
+  --c-ink-700: #334155;
+  --c-ink-500: #64748b;
+  --c-ink-400: #94a3b8;
+  --c-border: #e2e8f0;
+  --c-border-strong: #cbd5e1;
+
+  --c-primary: #2563eb;
+  --c-primary-hover: #1d4ed8;
+  --c-primary-soft: #eff4ff;
+
+  --c-accent: #f59e0b;
+  --c-accent-soft: #fff7ed;
+  --c-warn: #b45309;
+  --c-warn-soft: #fef3c7;
+
+  --c-success: #16a34a;
+  --c-error: #dc2626;
+
+  /* typography */
+  --font-sans: "Inter", "Noto Sans TC", "PingFang TC", "Microsoft JhengHei",
+               system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --fs-xs: 0.75rem;   --fs-sm: 0.875rem; --fs-base: 1rem;
+  --fs-lg: 1.125rem;  --fs-xl: 1.25rem;  --fs-2xl: 1.5rem;
+  --fs-3xl: clamp(1.5rem, 2.2vw + 1rem, 2rem);
+
+  /* 8-pt spacing scale */
+  --s-1: .25rem; --s-2: .5rem;  --s-3: .75rem; --s-4: 1rem;
+  --s-5: 1.25rem; --s-6: 1.5rem; --s-8: 2rem;   --s-10: 2.5rem;
+
+  /* shape & motion */
+  --r-sm: .375rem; --r-md: .5rem; --r-lg: .75rem; --r-xl: 1rem;
+  --shadow-1: 0 1px 2px rgba(15,23,42,.04), 0 1px 3px rgba(15,23,42,.06);
+  --shadow-2: 0 4px 12px rgba(15,23,42,.06), 0 2px 4px rgba(15,23,42,.05);
+  --shadow-3: 0 12px 32px rgba(15,23,42,.12), 0 4px 10px rgba(15,23,42,.08);
+  --motion: 160ms cubic-bezier(.2,.7,.3,1);
+}
+
+/* ── base ───────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
+html { color-scheme: light; }
+body {
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-sans);
+  font-size: var(--fs-base);
+  line-height: 1.55;
+  color: var(--c-ink-900);
+  background:
+    radial-gradient(1200px 600px at 10% -10%, #e8efff 0%, transparent 60%),
+    radial-gradient(900px 500px at 100% 0%, #fff3e0 0%, transparent 55%),
+    var(--c-bg);
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+button, input { font: inherit; color: inherit; }
+a { color: var(--c-primary); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* ── layout ─────────────────────────────────────────────────────────── */
+.page {
+  max-width: 1080px;
+  margin-inline: auto;
+  padding-inline: var(--s-6);
+  padding-block: var(--s-10) var(--s-8);
+}
+.hero { margin-block-end: var(--s-6); }
+.eyebrow {
+  display: inline-flex; align-items: center; gap: var(--s-2);
+  padding: var(--s-1) var(--s-3);
+  background: var(--c-surface); border: 1px solid var(--c-border);
+  border-radius: 999px; font-size: var(--fs-xs); color: var(--c-ink-500);
+  box-shadow: var(--shadow-1);
+}
+.eyebrow .dot {
+  width: .5rem; height: .5rem; border-radius: 999px;
+  background: var(--c-success);
+  box-shadow: 0 0 0 3px rgba(22,163,74,.18);
+}
+h1 {
+  margin: var(--s-3) 0 var(--s-2);
+  font-size: var(--fs-3xl);
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+}
+.sub {
+  margin: 0;
+  max-width: 65ch;
+  color: var(--c-ink-500);
+  font-size: var(--fs-sm);
+}
+.sub code {
+  background: var(--c-surface-muted);
+  border: 1px solid var(--c-border);
+  padding: .1rem .35rem; border-radius: var(--r-sm);
+  font-family: var(--font-mono); font-size: .8em;
+}
+
+/* ── search ─────────────────────────────────────────────────────────── */
+.searchbar {
+  display: flex; gap: var(--s-3);
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-xl);
+  padding: var(--s-2);
+  box-shadow: var(--shadow-2);
+  margin-block-start: var(--s-6);
+  transition: border-color var(--motion), box-shadow var(--motion);
+}
+.searchbar:focus-within {
+  border-color: var(--c-primary);
+  box-shadow: 0 0 0 4px rgba(37,99,235,.12), var(--shadow-2);
+}
+.searchbar .icon {
+  display: grid; place-items: center; width: 2.5rem;
+  color: var(--c-ink-400);
+}
+#q {
+  flex: 1; min-width: 0;
+  border: 0; outline: 0; background: transparent;
+  padding-block: var(--s-3); padding-inline: 0;
+  font-size: var(--fs-base);
+}
+#q::placeholder { color: var(--c-ink-400); }
+.btn {
+  appearance: none; border: 0; cursor: pointer;
+  display: inline-flex; align-items: center; gap: var(--s-2);
+  padding: var(--s-3) var(--s-5);
+  background: var(--c-primary); color: #fff;
+  border-radius: var(--r-lg);
+  font-weight: 600; font-size: var(--fs-sm);
+  transition: background var(--motion), transform var(--motion), box-shadow var(--motion);
+  box-shadow: 0 6px 16px -4px rgba(37,99,235,.45);
+}
+.btn:hover:not(:disabled) { background: var(--c-primary-hover); }
+.btn:active:not(:disabled) { transform: translateY(1px); }
+.btn:disabled { background: var(--c-ink-400); cursor: wait; box-shadow: none; }
+.btn:focus-visible {
+  outline: 2px solid var(--c-primary);
+  outline-offset: 2px;
+}
+
+.examples {
+  display: flex; flex-wrap: wrap; gap: var(--s-2);
+  margin-block: var(--s-4) 0;
+  font-size: var(--fs-sm);
+}
+.examples .label { color: var(--c-ink-500); align-self: center; }
+.chip {
+  display: inline-flex; align-items: center;
+  padding: var(--s-1) var(--s-3);
+  background: var(--c-surface); color: var(--c-ink-700);
+  border: 1px solid var(--c-border);
+  border-radius: 999px;
+  font-size: var(--fs-xs); cursor: pointer;
+  transition: background var(--motion), border-color var(--motion), color var(--motion);
+}
+.chip:hover, .chip:focus-visible {
+  background: var(--c-primary-soft); border-color: var(--c-primary);
+  color: var(--c-primary); outline: none;
+}
+
+/* ── results ────────────────────────────────────────────────────────── */
+.results {
+  display: grid; gap: var(--s-4);
+  margin-block-start: var(--s-6);
+}
+.card {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  column-gap: var(--s-4); align-items: center;
+  padding: var(--s-5);
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-1);
+  cursor: pointer;
+  transition: border-color var(--motion), box-shadow var(--motion), transform var(--motion);
+}
+.card:hover, .card:focus-visible {
+  border-color: var(--c-primary);
+  box-shadow: var(--shadow-2);
+  outline: none;
+  transform: translateY(-1px);
+}
+.card.recommended {
+  border-color: var(--c-accent);
+  background: linear-gradient(180deg, #fff8ec 0%, #fff 60%);
+}
+.card.nomatch {
+  border-color: #fde68a;
+  background: var(--c-accent-soft);
+}
+
+.rank {
+  flex-shrink: 0;
+  min-width: 2.5rem; height: 2.5rem;
+  display: inline-flex; align-items: center; justify-content: center;
+  padding-inline: var(--s-3);
+  background: var(--c-primary); color: #fff;
+  border-radius: var(--r-md);
+  font-weight: 700; font-size: var(--fs-sm);
+  letter-spacing: 0.02em;
+}
+.card.recommended .rank { background: var(--c-accent); }
+.card.nomatch .rank    { background: var(--c-warn); }
+
+.card .body { min-width: 0; }
+.card .title {
+  font-weight: 600; font-size: var(--fs-lg);
+  line-height: 1.3; letter-spacing: -0.005em;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.card .meta {
+  margin-block-start: var(--s-1);
+  color: var(--c-ink-500); font-size: var(--fs-sm);
+  display: flex; flex-wrap: wrap; gap: var(--s-2) var(--s-4);
+}
+.card .meta .k { color: var(--c-ink-400); margin-inline-end: var(--s-1); }
+.card .meta b { color: var(--c-ink-700); font-weight: 600; }
+.card .meta .pill {
+  display: inline-flex; align-items: center; gap: var(--s-1);
+  padding: 2px var(--s-2); border-radius: 999px;
+  background: var(--c-surface-muted); color: var(--c-ink-700);
+  font-size: var(--fs-xs);
+}
+
+.score {
+  flex-shrink: 0;
+  display: flex; flex-direction: column; align-items: flex-end;
+  color: var(--c-ink-400); font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+.score b {
+  color: var(--c-ink-900); font-size: var(--fs-lg);
+  font-weight: 700; line-height: 1;
+}
+
+/* ── tooltip (hover popover) ───────────────────────────────────────── */
+.tooltip {
+  position: absolute;
+  inset-inline-start: calc(100% + 14px);
+  inset-block-start: 0;
+  width: 480px; max-width: 52vw;
+  padding: var(--s-5);
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-3);
+  z-index: 20;
+  opacity: 0; pointer-events: none;
+  transform: translateX(-4px);
+  transition: opacity var(--motion), transform var(--motion);
+}
+.card:hover .tooltip,
+.card:focus-within .tooltip {
+  opacity: 1; pointer-events: auto;
+  transform: translateX(0);
+}
+.tooltip h3 {
+  margin: 0 0 var(--s-3);
+  font-size: var(--fs-sm); font-weight: 600;
+  color: var(--c-ink-500); text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.spec-grid {
+  display: grid; grid-template-columns: auto 1fr;
+  column-gap: var(--s-4); row-gap: var(--s-2);
+  font-size: var(--fs-sm);
+}
+.spec-grid dt {
+  color: var(--c-primary); font-weight: 600; white-space: nowrap;
+}
+.spec-grid dd {
+  margin: 0; color: var(--c-ink-700);
+  word-break: break-word;
+}
+.tooltip figure {
+  margin: var(--s-4) 0 0;
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-md);
+  background: var(--c-surface-muted);
+  overflow: hidden;
+}
+.tooltip figure img { display: block; width: 100%; height: auto; }
+.tooltip figcaption {
+  font-size: var(--fs-xs); color: var(--c-ink-500);
+  padding: var(--s-1) var(--s-2); text-align: end;
+}
+
+/* ── states ─────────────────────────────────────────────────────────── */
+.placeholder, .loading, .error {
+  margin-block-start: var(--s-6);
+  padding: var(--s-5) var(--s-6);
+  background: var(--c-surface);
+  border: 1px dashed var(--c-border-strong);
+  border-radius: var(--r-lg);
+  color: var(--c-ink-500);
+  font-size: var(--fs-sm);
+  text-align: center;
+}
+.loading { border-style: solid; color: var(--c-ink-700); }
+.loading::before {
+  content: ""; display: inline-block;
+  width: .9rem; height: .9rem; margin-inline-end: var(--s-2);
+  border: 2px solid var(--c-border-strong);
+  border-top-color: var(--c-primary);
+  border-radius: 999px;
+  animation: spin .9s linear infinite;
+  vertical-align: -2px;
+}
+.error {
+  background: #fef2f2; border-color: #fecaca; color: var(--c-error);
+  border-style: solid;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.toast {
+  position: fixed; inset-block-end: var(--s-6);
+  inset-inline-start: 50%; transform: translateX(-50%) translateY(8px);
+  background: var(--c-ink-900); color: #fff;
+  padding: var(--s-3) var(--s-5);
+  border-radius: var(--r-md); font-size: var(--fs-sm);
+  box-shadow: var(--shadow-3);
+  opacity: 0; transition: opacity var(--motion), transform var(--motion);
+  pointer-events: none;
+}
+.toast.show {
+  opacity: 1; transform: translateX(-50%) translateY(0);
+}
+
+/* ── responsive ─────────────────────────────────────────────────────── */
+@media (max-width: 960px) {
+  .tooltip {
+    inset-inline-start: 0;
+    inset-block-start: calc(100% + 8px);
+    width: 100%; max-width: 100%;
+    transform: translateY(-4px);
+  }
+  .card:hover .tooltip, .card:focus-within .tooltip {
+    transform: translateY(0);
+  }
+}
+@media (max-width: 640px) {
+  .page { padding-block-start: var(--s-6); }
+  h1 { font-size: var(--fs-2xl); }
+  .card { grid-template-columns: auto 1fr; }
+  .card .score { grid-column: 1 / -1; flex-direction: row; justify-content: flex-end; gap: var(--s-2); }
+  .searchbar { flex-direction: column; padding: var(--s-3); }
+  .searchbar .icon { display: none; }
+  #q { padding: var(--s-3); }
+  .btn { justify-content: center; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition-duration: 0ms !important; animation-duration: 0ms !important; }
+}
+</style>
+</head>
+<body>
+
+<main class="page">
+  <header class="hero">
+    <span class="eyebrow"><span class="dot"></span>Reranker · {{ llm }}</span>
+    <h1>舞光 LED 產品型錄查詢</h1>
+    <p class="sub">
+      輸入需求，系統回傳 5 款最匹配的產品（第 1 筆為推薦）以及「無匹配產品」選項。
+      檢索使用 <code>BAAI/bge-m3</code> + BM25 hybrid；rerank 由 <code>{{ llm }}</code> cross-encoder 完成。
+    </p>
+  </header>
+
+  <section class="searchbar" role="search">
+    <span class="icon" aria-hidden="true">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+    </span>
+    <input id="q" type="text" autocomplete="off" spellcheck="false"
+           placeholder="例：40W 以下、4000K、IP65 防水的崁燈"
+           onkeydown="if(event.key==='Enter')go()">
+    <button id="btn" class="btn" type="button" onclick="go()">
+      搜尋
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m13 5 7 7-7 7"/></svg>
+    </button>
+  </section>
+
+  <div class="examples">
+    <span class="label">快速範例：</span>
+    <button class="chip" type="button" onclick="fill('40W 以下 4000K IP65 防水崁燈')">防水崁燈</button>
+    <button class="chip" type="button" onclick="fill('辦公室用 30W 5700K 輕鋼架燈')">辦公室輕鋼架</button>
+    <button class="chip" type="button" onclick="fill('戶外景觀 50W 3000K 投射燈')">戶外投射燈</button>
+    <button class="chip" type="button" onclick="fill('停車場 80W 吊管工事燈')">工事燈</button>
+  </div>
+
+  <div id="out" aria-live="polite">
+    <div class="placeholder">輸入需求並送出，即可取得 5 款推薦與 1 項「無匹配」選項。</div>
+  </div>
+</main>
+
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+<script>
+function fill(s) {
+  const q = document.getElementById('q');
+  q.value = s; q.focus(); go();
+}
+
+async function go() {
+  const q = document.getElementById('q').value.trim();
+  if (!q) return;
+  const out = document.getElementById('out');
+  const btn = document.getElementById('btn');
+  btn.disabled = true;
+  out.innerHTML = '<div class="loading">搜尋中… BGE cross-encoder rerank 約 1–3 秒（首次載入模型多 5–10 秒）</div>';
+  try {
+    const r = await fetch('/api/search', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({query: q}),
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || ('HTTP ' + r.status));
+    render(data.results || []);
+  } catch (e) {
+    out.innerHTML = '<div class="error">錯誤：' + escapeHtml(e.message) + '</div>';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function render(results) {
+  const out = document.getElementById('out');
+  if (!results.length) {
+    out.innerHTML = '<div class="error">沒有結果</div>';
+    return;
+  }
+  const parts = ['<div class="results">'];
+  results.forEach((r, i) => {
+    const rec = i === 0;
+    const rank = rec ? '推薦' : '#' + (i + 1);
+    parts.push(`<article class="card ${rec ? 'recommended' : ''}" tabindex="0">`);
+    parts.push(`<span class="rank">${rank}</span>`);
+    parts.push('<div class="body">');
+    parts.push(`<div class="title">${escapeHtml(r.name || '(未命名)')}</div>`);
+    parts.push('<div class="meta">');
+    parts.push(`<span><span class="k">ID</span><b>${escapeHtml(r.models || '—')}</b></span>`);
+    parts.push(`<span class="pill">p.${r.page}</span>`);
+    if (r.category) parts.push(`<span class="pill">${escapeHtml(r.category)}</span>`);
+    parts.push('</div></div>');
+    parts.push(`<div class="score"><b>${r.score ?? '—'}</b><span>rerank</span></div>`);
+
+    parts.push('<aside class="tooltip" role="tooltip">');
+    parts.push('<h3>產品規格</h3>');
+    parts.push('<dl class="spec-grid">');
+    parts.push(specRow('類別', r.category));
+    parts.push(specRow('型號 (ID)', r.models));
+    parts.push(specRow('瓦數', r.wattages ? r.wattages + ' W' : ''));
+    parts.push(specRow('色溫', r.color_temps ? r.color_temps + ' K' : ''));
+    parts.push(specRow('光通量', r.lumens ? r.lumens + ' LM' : ''));
+    parts.push(specRow('IP 防護', r.ip_rating ? 'IP' + r.ip_rating : ''));
+    parts.push(specRow('特色', r.features));
+    parts.push(specRow('評分理由', r.reason));
+    parts.push('</dl>');
+    parts.push('<figure>');
+    parts.push(`<img loading="lazy" src="/api/page_image/${r.page}.png" alt="型錄第 ${r.page} 頁預覽">`);
+    parts.push(`<figcaption>型錄 p.${r.page}</figcaption>`);
+    parts.push('</figure>');
+    parts.push('</aside>');
+    parts.push('</article>');
+  });
+  parts.push(
+    '<article class="card nomatch" tabindex="0" onclick="noMatch()" onkeydown="if(event.key===\'Enter\')noMatch()">',
+    '<span class="rank">無匹配</span>',
+    '<div class="body">',
+    '<div class="title">以上皆非 — 沒有符合需求的產品</div>',
+    '<div class="meta"><span>若 5 項結果皆不合適，點此回報本次查詢為「無匹配」。</span></div>',
+    '</div>',
+    '<div class="score"><b>—</b><span>回報</span></div>',
+    '</article>'
+  );
+  parts.push('</div>');
+  out.innerHTML = parts.join('');
+}
+
+function specRow(label, value) {
+  if (value === null || value === undefined || value === '') return '';
+  return `<dt>${escapeHtml(label)}</dt><dd>${escapeHtml(String(value))}</dd>`;
+}
+
+function noMatch() {
+  const t = document.getElementById('toast');
+  t.textContent = '已記錄本次查詢為「無匹配產品」';
+  t.classList.add('show');
+  clearTimeout(noMatch._h);
+  noMatch._h = setTimeout(() => t.classList.remove('show'), 2200);
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[c]));
+}
+</script>
+</body>
+</html>
