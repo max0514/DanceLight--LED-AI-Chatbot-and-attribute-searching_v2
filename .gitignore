@@ -5,6 +5,10 @@
 *.log
 rag_results*.xlsx
 
+# Local query/feedback database
+*.db
+*.db-journal
+
 # Python
 __pycache__/
 *.pyc

@@ -74,8 +74,12 @@ a:hover { text-decoration: underline; }
 
 /* ── layout ─────────────────────────────────────────────────────────── */
 .page {
-  max-width: 1080px;
-  margin-inline: auto;
+  /* Content roughly centered, nudged ~80px to the left of true center.
+     Tooltips fly to the LEFT of the card; the larger left-side space
+     ensures they fit on wide monitors. */
+  max-width: 720px;
+  margin-inline-start: clamp(var(--s-6), calc(50vw - 440px), calc(100vw - 760px));
+  margin-inline-end: auto;
   padding-inline: var(--s-6);
   padding-block: var(--s-10) var(--s-8);
 }
@@ -210,13 +214,14 @@ h1 {
 
 .rank {
   flex-shrink: 0;
-  min-width: 2.5rem; height: 2.5rem;
+  min-width: 4.5rem; height: 2.5rem;
   display: inline-flex; align-items: center; justify-content: center;
   padding-inline: var(--s-3);
   background: var(--c-primary); color: #fff;
   border-radius: var(--r-md);
   font-weight: 700; font-size: var(--fs-sm);
   letter-spacing: 0.02em;
+  white-space: nowrap;
 }
 .card.recommended .rank { background: var(--c-accent); }
 .card.nomatch .rank    { background: var(--c-warn); }
@@ -227,6 +232,21 @@ h1 {
   line-height: 1.3; letter-spacing: -0.005em;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+.card .reason {
+  margin-block-start: var(--s-2);
+  color: var(--c-ink-700); font-size: var(--fs-sm);
+  line-height: 1.45;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.card.recommended .reason { color: var(--c-warn); font-weight: 500; }
+.card .reason::before {
+  content: "▸ ";
+  color: var(--c-ink-400);
+}
+.card.recommended .reason::before { color: var(--c-accent); }
 .card .meta {
   margin-block-start: var(--s-1);
   color: var(--c-ink-500); font-size: var(--fs-sm);
@@ -240,24 +260,50 @@ h1 {
   background: var(--c-surface-muted); color: var(--c-ink-700);
   font-size: var(--fs-xs);
 }
+.card .models-row {
+  margin-block-start: var(--s-2);
+  display: flex; flex-wrap: wrap; gap: var(--s-1) var(--s-2);
+  align-items: center;
+  font-size: var(--fs-xs);
+}
+.card .models-row .k {
+  color: var(--c-ink-400); margin-inline-end: var(--s-1);
+}
+.card .models-row .model-pill {
+  display: inline-flex; align-items: center;
+  padding: 2px var(--s-2); border-radius: var(--r-sm);
+  background: var(--c-primary-soft); color: var(--c-primary);
+  border: 1px solid #dbe6fb;
+  font-family: var(--font-mono); font-size: var(--fs-xs);
+  font-weight: 600;
+}
+.card .models-row .more {
+  color: var(--c-ink-500); font-size: var(--fs-xs);
+}
 
 .score {
   flex-shrink: 0;
   display: flex; flex-direction: column; align-items: flex-end;
   color: var(--c-ink-400); font-size: var(--fs-xs);
-  font-variant-numeric: tabular-nums;
+  gap: 2px;
 }
 .score b {
-  color: var(--c-ink-900); font-size: var(--fs-lg);
-  font-weight: 700; line-height: 1;
+  color: var(--c-ink-700); font-size: var(--fs-xs);
+  font-weight: 600;
+  display: inline-flex; align-items: center; gap: 4px;
 }
+.score b::before {
+  content: "💡"; font-size: 0.95rem;
+}
+.score .hint { color: var(--c-ink-400); font-size: var(--fs-xs); }
 
 /* ── tooltip (hover popover) ───────────────────────────────────────── */
 .tooltip {
   position: absolute;
   inset-inline-start: calc(100% + 14px);
+  inset-inline-end: auto;
   inset-block-start: 0;
-  width: 480px; max-width: 52vw;
+  width: 540px; max-width: calc(100vw - 100% - 60px);
   padding: var(--s-5);
   background: var(--c-surface);
   border: 1px solid var(--c-border);
@@ -268,8 +314,29 @@ h1 {
   transform: translateX(-4px);
   transition: opacity var(--motion), transform var(--motion);
 }
+/* Bridge between the card's right edge and the tooltip's left edge so the
+   cursor doesn't break the hover when crossing the 14px gap. */
+.tooltip::before {
+  content: "";
+  position: absolute;
+  inset-inline-start: -16px; inset-inline-end: auto;
+  inset-block-start: 0;
+  width: 16px; height: 100%;
+  background: transparent;
+}
+.model-list {
+  display: flex; flex-wrap: wrap; gap: var(--s-1) var(--s-2);
+}
+.model-list .model-pill {
+  display: inline-flex; align-items: center;
+  padding: 2px var(--s-2); border-radius: var(--r-sm);
+  background: var(--c-surface-muted); color: var(--c-ink-700);
+  font-family: var(--font-mono); font-size: var(--fs-xs);
+  border: 1px solid var(--c-border);
+}
 .card:hover .tooltip,
-.card:focus-within .tooltip {
+.card:focus-within .tooltip,
+.tooltip:hover {
   opacity: 1; pointer-events: auto;
   transform: translateX(0);
 }
@@ -345,15 +412,113 @@ h1 {
   opacity: 1; transform: translateX(-50%) translateY(0);
 }
 
+/* ── PDF page viewer modal ──────────────────────────────────────────── */
+.pdf-modal {
+  position: fixed; inset: 0;
+  display: none;
+  align-items: center; justify-content: center;
+  background: rgba(15, 23, 42, 0.78);
+  backdrop-filter: blur(4px);
+  z-index: 1000;
+}
+.pdf-modal.show { display: flex; }
+.pdf-modal-inner {
+  position: relative;
+  background: #fff;
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-3);
+  max-width: min(94vw, 1100px);
+  max-height: 94vh;
+  display: flex; flex-direction: column;
+  overflow: hidden;
+}
+.pdf-toolbar {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: var(--s-3);
+  padding: var(--s-3) var(--s-5);
+  background: var(--c-surface-muted);
+  border-bottom: 1px solid var(--c-border);
+}
+.pdf-toolbar-group { display: flex; align-items: center; gap: var(--s-2); }
+.pdf-nav {
+  appearance: none; border: 1px solid var(--c-border);
+  background: var(--c-surface); cursor: pointer;
+  width: 2.25rem; height: 2.25rem;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: var(--r-md);
+  color: var(--c-ink-700);
+  transition: background var(--motion), border-color var(--motion);
+}
+.pdf-nav:hover:not(:disabled) {
+  background: var(--c-primary-soft); border-color: var(--c-primary); color: var(--c-primary);
+}
+.pdf-nav:disabled { opacity: 0.4; cursor: not-allowed; }
+.pdf-pageno {
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-sm); color: var(--c-ink-700);
+  padding: 0 var(--s-3);
+  min-width: 7rem; text-align: center;
+}
+.pdf-pageno input {
+  width: 3.5rem; text-align: center;
+  border: 1px solid var(--c-border); border-radius: var(--r-sm);
+  padding: 2px 4px;
+  font: inherit;
+}
+.pdf-close {
+  appearance: none; border: 0; background: transparent;
+  cursor: pointer; padding: 0;
+  width: 2.25rem; height: 2.25rem;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: var(--r-md);
+  color: var(--c-ink-700);
+  font-size: 1.2rem;
+}
+.pdf-close:hover { background: var(--c-surface-muted); color: var(--c-ink-900); }
+.pdf-stage {
+  flex: 1; min-height: 0;
+  overflow: auto;
+  background: var(--c-bg);
+  padding: var(--s-4);
+  display: flex; justify-content: center; align-items: flex-start;
+}
+.pdf-stage img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  box-shadow: var(--shadow-2);
+  background: #fff;
+}
+.tooltip figure img { cursor: zoom-in; }
+.pdf-spinner {
+  position: absolute; inset-block-start: 50%; inset-inline-start: 50%;
+  transform: translate(-50%, -50%);
+  width: 2rem; height: 2rem;
+  border: 3px solid var(--c-border);
+  border-top-color: var(--c-primary);
+  border-radius: 999px;
+  animation: spin 0.9s linear infinite;
+  display: none;
+}
+.pdf-stage.loading .pdf-spinner { display: block; }
+.pdf-stage.loading img { opacity: 0.3; }
+
 /* ── responsive ─────────────────────────────────────────────────────── */
 @media (max-width: 960px) {
+  .page {
+    margin-inline-start: var(--s-6);
+    margin-inline-end: var(--s-6);
+    max-width: none;
+  }
   .tooltip {
-    inset-inline-start: 0;
+    inset-inline-start: 0; inset-inline-end: auto;
     inset-block-start: calc(100% + 8px);
     width: 100%; max-width: 100%;
     transform: translateY(-4px);
   }
-  .card:hover .tooltip, .card:focus-within .tooltip {
+  .tooltip::after { display: none; }
+  .card:hover .tooltip, .card:focus-within .tooltip,
+  .tooltip:hover {
     transform: translateY(0);
   }
 }
@@ -376,11 +541,12 @@ h1 {
 
 <main class="page">
   <header class="hero">
-    <span class="eyebrow"><span class="dot"></span>Reranker · {{ llm }}</span>
+    <span class="eyebrow"><span class="dot"></span>LLM 篩選 · {{ llm }}</span>
     <h1>舞光 LED 產品型錄查詢</h1>
     <p class="sub">
-      輸入需求，系統回傳 5 款最匹配的產品（第 1 筆為推薦）以及「無匹配產品」選項。
-      檢索使用 <code>BAAI/bge-m3</code> + BM25 hybrid；rerank 由 <code>{{ llm }}</code> cross-encoder 完成。
+      輸入需求，系統依序通過 <code>BAAI/bge-m3</code> + BM25 hybrid 檢索、
+      <code>bge-reranker-v2-m3</code> cross-encoder 重排，最後由
+      <code>{{ llm }}</code> 從 20 個候選中挑出「★ 推薦 + 4 備選」並附說明。
     </p>
   </header>
 
@@ -412,6 +578,28 @@ h1 {
 
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
+<!-- PDF page viewer modal -->
+<div id="pdfModal" class="pdf-modal" role="dialog" aria-modal="true" aria-label="型錄頁面預覽"
+     onclick="if(event.target===this)closePdf()">
+  <div class="pdf-modal-inner">
+    <div class="pdf-toolbar">
+      <div class="pdf-toolbar-group">
+        <button class="pdf-nav" type="button" onclick="pdfNav(-1)" id="pdfPrev" aria-label="上一頁">‹</button>
+        <span class="pdf-pageno">
+          p.<input type="number" id="pdfPageInput" min="1" onchange="pdfGoto(this.valueAsNumber)">
+          / <span id="pdfTotal">—</span>
+        </span>
+        <button class="pdf-nav" type="button" onclick="pdfNav(1)" id="pdfNext" aria-label="下一頁">›</button>
+      </div>
+      <button class="pdf-close" type="button" onclick="closePdf()" aria-label="關閉">✕</button>
+    </div>
+    <div class="pdf-stage" id="pdfStage">
+      <div class="pdf-spinner"></div>
+      <img id="pdfImg" alt="" loading="eager">
+    </div>
+  </div>
+</div>
+
 <script>
 function fill(s) {
   const q = document.getElementById('q');
@@ -424,7 +612,7 @@ async function go() {
   const out = document.getElementById('out');
   const btn = document.getElementById('btn');
   btn.disabled = true;
-  out.innerHTML = '<div class="loading">搜尋中… BGE cross-encoder rerank 約 1–3 秒（首次載入模型多 5–10 秒）</div>';
+  out.innerHTML = '<div class="loading">搜尋中… 檢索 + GPT-4o 篩選約 3–8 秒</div>';
   try {
     const r = await fetch('/api/search', {
       method: 'POST',
@@ -433,12 +621,26 @@ async function go() {
     });
     const data = await r.json();
     if (!r.ok) throw new Error(data.error || ('HTTP ' + r.status));
+    lastQueryId = data.query_id || null;
+    lastElapsedMs = data.elapsed_ms || 0;
     render(data.results || []);
   } catch (e) {
     out.innerHTML = '<div class="error">錯誤：' + escapeHtml(e.message) + '</div>';
   } finally {
     btn.disabled = false;
   }
+}
+
+let lastQueryId = null;
+let lastElapsedMs = 0;
+
+function sendFeedback(kind, payload) {
+  if (!lastQueryId) return;
+  fetch('/api/feedback', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({query_id: lastQueryId, kind, payload}),
+  }).catch(() => {});
 }
 
 function render(results) {
@@ -450,33 +652,44 @@ function render(results) {
   const parts = ['<div class="results">'];
   results.forEach((r, i) => {
     const rec = i === 0;
-    const rank = rec ? '推薦' : '#' + (i + 1);
-    parts.push(`<article class="card ${rec ? 'recommended' : ''}" tabindex="0">`);
-    parts.push(`<span class="rank">${rank}</span>`);
+    const rank = r.rank_label || (rec ? '★ 推薦' : '備選 ' + i);
+    const safeRank = escapeHtml(rank).replace(/\s+/g, '&nbsp;');
+    parts.push(`<article class="card ${rec ? 'recommended' : ''}" tabindex="0"`);
+    parts.push(` onclick="pickCard(${i}, ${JSON.stringify(rank).replace(/"/g, '&quot;')}, ${r.page})"`);
+    parts.push(' onkeydown="if(event.key===\'Enter\')this.click()">');
+    parts.push(`<span class="rank">${safeRank}</span>`);
     parts.push('<div class="body">');
-    parts.push(`<div class="title">${escapeHtml(r.name || '(未命名)')}</div>`);
+    parts.push(`<div class="title">${escapeHtml(r.name || '型錄 p.' + r.page)}</div>`);
+    if (r.reason) {
+      parts.push(`<div class="reason">${escapeHtml(r.reason)}</div>`);
+    }
     parts.push('<div class="meta">');
-    parts.push(`<span><span class="k">ID</span><b>${escapeHtml(r.models || '—')}</b></span>`);
     parts.push(`<span class="pill">p.${r.page}</span>`);
     if (r.category) parts.push(`<span class="pill">${escapeHtml(r.category)}</span>`);
-    parts.push('</div></div>');
-    parts.push(`<div class="score"><b>${r.score ?? '—'}</b><span>rerank</span></div>`);
+    if (r.wattages) parts.push(`<span class="pill">${escapeHtml(r.wattages)}W</span>`);
+    if (r.color_temps) parts.push(`<span class="pill">${escapeHtml(r.color_temps)}K</span>`);
+    if (r.ip_rating) parts.push(`<span class="pill">IP${escapeHtml(r.ip_rating)}</span>`);
+    parts.push('</div>');
+    if (r.models) parts.push(modelsRow(r.models, 6));
+    parts.push('</div>');
+    parts.push(`<div class="score"><b>推薦理由</b><span class="hint">滑鼠移上看規格</span></div>`);
 
     parts.push('<aside class="tooltip" role="tooltip">');
     parts.push('<h3>產品規格</h3>');
     parts.push('<dl class="spec-grid">');
+    parts.push(specRow('LLM 推薦理由', r.reason));
+    parts.push(specRow('頁數', 'p.' + r.page));
     parts.push(specRow('類別', r.category));
-    parts.push(specRow('型號 (ID)', r.models));
+    parts.push(specModelRow('型號 (ID)', r.models));
     parts.push(specRow('瓦數', r.wattages ? r.wattages + ' W' : ''));
     parts.push(specRow('色溫', r.color_temps ? r.color_temps + ' K' : ''));
     parts.push(specRow('光通量', r.lumens ? r.lumens + ' LM' : ''));
     parts.push(specRow('IP 防護', r.ip_rating ? 'IP' + r.ip_rating : ''));
     parts.push(specRow('特色', r.features));
-    parts.push(specRow('評分理由', r.reason));
     parts.push('</dl>');
     parts.push('<figure>');
-    parts.push(`<img loading="lazy" src="/api/page_image/${r.page}.png" alt="型錄第 ${r.page} 頁預覽">`);
-    parts.push(`<figcaption>型錄 p.${r.page}</figcaption>`);
+    parts.push(`<img loading="lazy" src="/api/page_image/${r.page}.png" alt="型錄第 ${r.page} 頁預覽" onclick="event.stopPropagation();openPdf(${r.page})">`);
+    parts.push(`<figcaption>點圖放大瀏覽型錄 · p.${r.page}</figcaption>`);
     parts.push('</figure>');
     parts.push('</aside>');
     parts.push('</article>');
@@ -486,21 +699,118 @@ function render(results) {
     '<span class="rank">無匹配</span>',
     '<div class="body">',
     '<div class="title">以上皆非 — 沒有符合需求的產品</div>',
-    '<div class="meta"><span>若 5 項結果皆不合適，點此回報本次查詢為「無匹配」。</span></div>',
+    '<div class="meta"><span>若 5 項結果皆不合適，點此回報。已記錄,有助改善排序。</span></div>',
     '</div>',
     '<div class="score"><b>—</b><span>回報</span></div>',
     '</article>'
   );
   parts.push('</div>');
+  if (lastElapsedMs) {
+    parts.push(`<div style="text-align:center;margin-top:12px;color:var(--c-ink-400);font-size:var(--fs-xs)">查詢耗時 ${lastElapsedMs} ms · query_id #${lastQueryId ?? '—'}</div>`);
+  }
   out.innerHTML = parts.join('');
 }
+
+function pickCard(idx, rank, page) {
+  sendFeedback('click', {idx, rank, page});
+}
+
+/* ── PDF viewer modal ───────────────────────────────────────── */
+let pdfTotalPages = null;
+let pdfCurrentPage = 1;
+const PDF_MODAL_DPI = 180;
+
+async function ensurePdfMeta() {
+  if (pdfTotalPages !== null) return;
+  try {
+    const r = await fetch('/api/pdf_meta');
+    const d = await r.json();
+    pdfTotalPages = d.total_pages || 1;
+    document.getElementById('pdfTotal').textContent = pdfTotalPages;
+    document.getElementById('pdfPageInput').max = pdfTotalPages;
+  } catch {
+    pdfTotalPages = 999;
+  }
+}
+
+async function openPdf(page) {
+  await ensurePdfMeta();
+  pdfCurrentPage = Math.max(1, Math.min(pdfTotalPages, page | 0 || 1));
+  const modal = document.getElementById('pdfModal');
+  modal.classList.add('show');
+  document.body.style.overflow = 'hidden';
+  renderPdfPage();
+}
+
+function closePdf() {
+  document.getElementById('pdfModal').classList.remove('show');
+  document.body.style.overflow = '';
+}
+
+function pdfNav(delta) {
+  pdfGoto(pdfCurrentPage + delta);
+}
+
+function pdfGoto(page) {
+  if (!pdfTotalPages) return;
+  page = Math.max(1, Math.min(pdfTotalPages, page | 0));
+  if (page === pdfCurrentPage) return;
+  pdfCurrentPage = page;
+  renderPdfPage();
+}
+
+function renderPdfPage() {
+  const stage = document.getElementById('pdfStage');
+  const img = document.getElementById('pdfImg');
+  const input = document.getElementById('pdfPageInput');
+  const prev = document.getElementById('pdfPrev');
+  const next = document.getElementById('pdfNext');
+
+  input.value = pdfCurrentPage;
+  prev.disabled = pdfCurrentPage <= 1;
+  next.disabled = pdfTotalPages != null && pdfCurrentPage >= pdfTotalPages;
+
+  stage.classList.add('loading');
+  img.alt = `型錄第 ${pdfCurrentPage} 頁`;
+  img.onload = () => stage.classList.remove('loading');
+  img.onerror = () => stage.classList.remove('loading');
+  img.src = `/api/page_image/${pdfCurrentPage}.png?dpi=${PDF_MODAL_DPI}`;
+}
+
+document.addEventListener('keydown', (e) => {
+  const modal = document.getElementById('pdfModal');
+  if (!modal.classList.contains('show')) return;
+  if (e.key === 'Escape') { closePdf(); e.preventDefault(); }
+  else if (e.key === 'ArrowLeft') { pdfNav(-1); e.preventDefault(); }
+  else if (e.key === 'ArrowRight') { pdfNav(1); e.preventDefault(); }
+});
 
 function specRow(label, value) {
   if (value === null || value === undefined || value === '') return '';
   return `<dt>${escapeHtml(label)}</dt><dd>${escapeHtml(String(value))}</dd>`;
 }
 
+function specModelRow(label, csv) {
+  if (!csv) return '';
+  const pills = String(csv).split(',')
+    .map(s => s.trim()).filter(Boolean)
+    .map(m => `<span class="model-pill">${escapeHtml(m)}</span>`)
+    .join('');
+  return `<dt>${escapeHtml(label)}</dt><dd><div class="model-list">${pills}</div></dd>`;
+}
+
+function modelsRow(csv, maxVisible) {
+  const items = String(csv).split(',').map(s => s.trim()).filter(Boolean);
+  if (!items.length) return '';
+  const head = items.slice(0, maxVisible)
+    .map(m => `<span class="model-pill">${escapeHtml(m)}</span>`).join('');
+  const more = items.length > maxVisible
+    ? `<span class="more">+${items.length - maxVisible} 更多</span>` : '';
+  return `<div class="models-row"><span class="k">型號</span>${head}${more}</div>`;
+}
+
 function noMatch() {
+  sendFeedback('no_match', null);
   const t = document.getElementById('toast');
   t.textContent = '已記錄本次查詢為「無匹配產品」';
   t.classList.add('show');

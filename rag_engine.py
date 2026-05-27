@@ -8,6 +8,7 @@ Pipeline (matches dancelight_rag2.0_2026-04-29/dancelight_rag_test.py @ Apr 30 v
   - Retrieval: BM25 + dense hybrid with synonym expansion.
   - Reranker: BAAI/bge-reranker-v2-m3 CrossEncoder (no Ollama LLM in the path).
 """
+import hashlib
 import json
 import os
 import re
@@ -15,6 +16,7 @@ import re
 import fitz
 import jieba
 import numpy as np
+import openai
 from dotenv import load_dotenv
 from rank_bm25 import BM25Okapi
 from sentence_transformers import CrossEncoder, SentenceTransformer
@@ -26,21 +28,26 @@ ODL_JSON = "./output_opendataloader/2025舞光LED21st(單頁水印可搜尋).jso
 ODL_DIR = "./output_opendataloader"
 IMG_CACHE_FILE = "./img_descriptions_cache.json"
 EMBED_CACHE = "./bge_m3_embeddings/chunk_embeddings.npy"
+ANNOTATIONS_CACHE = "./annotations_cache.json"
 
 EMBED_MODEL = "BAAI/bge-m3"
 RERANK_MODEL = "BAAI/bge-reranker-v2-m3"
-# Kept for web UI label compatibility (templates/index.html reads rag_engine.LOCAL_LLM)
-LOCAL_LLM = RERANK_MODEL
+LLM_SELECT_MODEL = "gpt-4o"
+# Web UI label
+LOCAL_LLM = LLM_SELECT_MODEL
 
 MIN_IMG_SIZE = 30_000
 RETRIEVE_K = 50
 RERANK_CANDIDATES = 20
+LLM_SELECT_CANDIDATES = 20
 BM25_WEIGHT = 0.5
 VECTOR_WEIGHT = 0.5
 
 _state: dict = {}
 _query_embed_model = None
 _reranker = None
+_openai_client = None
+_annotation_db: dict = {}
 
 
 LAMP_TERMS = [
@@ -395,24 +402,305 @@ def initialize():
     print(f"[rag_engine] ready — embeddings {embs.shape}")
 
 
+def _md5_key(text: str) -> str:
+    return hashlib.md5(text.encode("utf-8")).hexdigest()[:16]
+
+
+def _load_annotations():
+    global _annotation_db
+    if _annotation_db or not os.path.exists(ANNOTATIONS_CACHE):
+        return
+    with open(ANNOTATIONS_CACHE, "r", encoding="utf-8") as f:
+        _annotation_db = json.load(f)
+    print(f"[rag_engine] loaded {len(_annotation_db)} annotations")
+
+
+def _get_annotation(chunk_text: str) -> str:
+    return _annotation_db.get(_md5_key(chunk_text), "")
+
+
+_BAD_NAME_PREFIXES = ("※", "▲", "★", "●", "☆", "△", "◆", "■", "*", "•", "◎", "▼", "►")
+_BAD_NAME_KEYWORDS = (
+    # instruction / warning text
+    "安裝", "請", "務必", "切勿", "避免", "損壞", "注意", "說明", "警告",
+    "接地", "突波", "短路", "過載", "故障", "維修", "操作", "使用前",
+    "保固", "保證", "建議", "需在", "電源", "斷電", "通電", "規範",
+    "符合", "認證", "標章", "標示",
+    # marketing slogan / feature description
+    "營造", "氛圍", "感受", "體驗", "享受", "溫馨", "理想", "完美",
+    "高品質", "舒適", "適合", "適用", "適配", "讓您", "為您",
+    "打造", "創造", "帶來", "提供", "節省", "省電", "可愛",
+    "美好", "時尚", "簡約", "經典", "卓越", "優雅",
+)
+_PRODUCT_HINT_WORDS = (
+    "燈", "崁", "筒", "板", "管", "泡", "壁", "頂", "吊", "射", "軌",
+    "光", "投", "支架", "鋼架", "系列", "鏈", "套",
+)
+_LIST_PREFIX_RE = re.compile(r"^(\d+[\.、\)]|[①②③④⑤⑥⑦⑧⑨⑩]|[一二三四五六七八九十][、.])\s*")
+
+
+def _strip_list_prefix(s: str) -> str:
+    return _LIST_PREFIX_RE.sub("", s).strip()
+
+
+def _looks_like_product_name(s: str) -> bool:
+    s = _strip_list_prefix(s)
+    if not s or len(s) > 30 or len(s) < 3:
+        return False
+    if s.startswith(_BAD_NAME_PREFIXES):
+        return False
+    if any(kw in s for kw in _BAD_NAME_KEYWORDS):
+        return False
+    if any(p in s for p in (",", "，", "。", "?", "？", "!", "！", ";", "；", ":")):
+        return False
+    if not re.search(r"[一-鿿]", s):
+        return False
+    return any(w in s for w in _PRODUCT_HINT_WORDS)
+
+
+_PLACEHOLDER_NAME_RE = re.compile(r"^(第\s*\d+\s*頁產品|型錄\s*p\.?\s*\d+|未命名|無名|無標題|page\s*\d+)\s*$", re.I)
+
+
+def _is_bad_name(name: str) -> bool:
+    if not name:
+        return True
+    if name.startswith(_BAD_NAME_PREFIXES):
+        return True
+    if _LIST_PREFIX_RE.match(name):
+        return True
+    if _PLACEHOLDER_NAME_RE.match(name):
+        return True
+    if any(kw in name for kw in _BAD_NAME_KEYWORDS):
+        return True
+    return False
+
+
+def _model_dedup_key(models: str) -> str:
+    """Return a series-level key by taking the first model code and stripping
+    trailing -XX variant suffixes. e.g. D-CEC24DSW-LW → D-CEC24DSW."""
+    if not models:
+        return ""
+    first = models.split(",")[0].strip()
+    # strip last -segment if it's short alpha (variant marker)
+    m = re.match(r"^(.+?)(?:-[A-Z]{1,3})$", first)
+    return m.group(1) if m else first
+
+
+def _fallback_name(chunk_text: str, page: int, category: str = "") -> str:
+    body = re.sub(rf"^\[第{page}頁\]\s*", "", chunk_text)
+    body = re.sub(r"^【產品】[^\n]*\n", "", body)
+    lines = [ln.strip() for ln in body.split("\n")]
+
+    candidates = []
+    for ln in lines:
+        if ln.startswith(("[", "---", "【", "第", "(", "•")):
+            continue
+        if _looks_like_product_name(ln):
+            candidates.append(_strip_list_prefix(ln))
+
+    if candidates:
+        if category:
+            for c in candidates:
+                if category in c:
+                    return c
+        return candidates[0]
+
+    ann = _get_annotation(chunk_text)
+    if ann:
+        m = re.search(r"summary:\s*([^\n]+)", ann)
+        if m:
+            s = m.group(1).strip().strip("'\"")
+            if s and s != "未提供" and not _is_bad_name(s):
+                return s[:40]
+
+    return f"{category} (p.{page})" if category else f"型錄 p.{page}"
+
+
+def _get_openai():
+    global _openai_client
+    if _openai_client is None:
+        api_key = os.environ.get("OPENAI_API_KEY", "").strip()
+        if not api_key:
+            raise RuntimeError("OPENAI_API_KEY missing — set it in .env")
+        _openai_client = openai.OpenAI(api_key=api_key, timeout=60.0)
+    return _openai_client
+
+
+LLM_SELECT_PROMPT = """你是舞光 (Dancelight) LED 產品顧問。客戶用自然語言或標案規格描述需求,請從下列 {n} 個型錄節錄中挑出最匹配的 5 個產品。
+
+評選原則:
+- 規格比對:類別、瓦數 (W)、色溫 (K)、光通量 (lm)、IP 防護等級、特殊功能 (感應/調光/全電壓) 等盡量貼近客戶需求。
+- 排除非產品頁面 (品牌介紹、目錄索引、實驗室照片等),除非客戶問的就是這些資訊。
+- 第 1 名標為「★ 推薦」(最佳匹配),其餘 4 個依匹配程度依序為「備選 1」~「備選 4」。
+
+**product_name 抽取規則 (重要)**:
+- 從該文件的原文中找出「實際的產品系列名」,例如「凱薩泛光燈」、「尼莫防水崁燈」、「黑鑽石崁燈系列」、「OD-3201 系列投射燈」。
+- **絕對不要**輸出以下類型,這些是無效名稱:
+  - 包含「第 N 頁產品」、「型錄 p.N」、「未命名」等 placeholder
+  - 開頭 ※ ▲ ★ ● ☆ * • 等符號
+  - 列表前綴如「1.」、「(一)」
+  - 文案口號(含「營造氛圍/打造/帶來/感受/適合/溫馨」等字眼)
+  - 安裝注意事項或警告語(含「請、務必、避免、損壞、接地、突波」)
+- 若該文件無法在原文中找到產品名,但有型號代碼,**以「{{類別}}({{第一個型號}})」格式**作為 name,例如「投射燈 (OD-3201)」。
+- name 上限 30 個字、純繁體中文 + 英數字,不要引號。
+
+請以 JSON 物件輸出,僅一個 picks 陣列(5 筆,順序由佳到差):
+{{
+  "picks": [
+    {{"rank": "★ 推薦", "doc_id": <文件編號>, "name": "<產品系列名>", "reason": "<30字內,繁體中文,說明為何匹配>"}},
+    {{"rank": "備選 1", "doc_id": <文件編號>, "name": "...", "reason": "..."}},
+    {{"rank": "備選 2", "doc_id": <文件編號>, "name": "...", "reason": "..."}},
+    {{"rank": "備選 3", "doc_id": <文件編號>, "name": "...", "reason": "..."}},
+    {{"rank": "備選 4", "doc_id": <文件編號>, "name": "...", "reason": "..."}}
+  ]
+}}
+
+doc_id 必須是下列節錄中 [文件 N] 的整數 N (1~{n})。同一個 doc_id 不可重複。reason 一句話、30 字內。
+
+=== 使用者需求 ===
+{query}
+
+=== 型錄節錄 ===
+{context}"""
+
+
+def _build_llm_context(candidates, per_doc=1200):
+    parts = []
+    for i, c in enumerate(candidates):
+        m = c["metadata"]
+        page = m.get("page", "?")
+        head_specs = []
+        if m.get("category"):
+            head_specs.append(f"類別={m['category']}")
+        if m.get("models"):
+            head_specs.append(f"型號={m['models']}")
+        if m.get("wattages"):
+            head_specs.append(f"W={m['wattages']}")
+        if m.get("color_temps"):
+            head_specs.append(f"K={m['color_temps']}")
+        if m.get("lumens"):
+            head_specs.append(f"lm={m['lumens']}")
+        if m.get("ip_rating"):
+            head_specs.append(f"IP{m['ip_rating']}")
+        head = f"[文件 {i+1} / p.{page}" + (f" / {', '.join(head_specs)}" if head_specs else "") + "]"
+
+        ann = _get_annotation(c["text"])
+        ann_block = ""
+        if ann and not ann.startswith("#"):
+            ann_block = f"【註解】\n{ann[:400]}\n"
+
+        body = c["text"][:per_doc]
+        parts.append(f"{head}\n{ann_block}{body}")
+    return "\n\n---\n\n".join(parts)
+
+
+def _dedup_candidates(candidates):
+    """Drop later candidates that share (category, model-series-prefix) with an
+    earlier higher-scored one. Adjacent-page variants like D-CEC24DSW vs
+    D-CEC24DSW-LW collapse to a single representative."""
+    seen = set()
+    out = []
+    for c in candidates:
+        m = c["metadata"]
+        cat = (m.get("category") or "").strip()
+        key = (cat, _model_dedup_key(m.get("models", "")))
+        if key == (cat, "") or key not in seen:
+            seen.add(key)
+            out.append(c)
+    return out
+
+
+def _llm_select(query, candidates, top_k=5):
+    """GPT-4o picks ★ 推薦 + 4 備選 from BGE-reranked top-N (deduped)."""
+    if not candidates:
+        return []
+    deduped = _dedup_candidates(candidates)
+    short = deduped[:LLM_SELECT_CANDIDATES]
+    context = _build_llm_context(short)
+    prompt = LLM_SELECT_PROMPT.format(n=len(short), query=query, context=context)
+
+    try:
+        client = _get_openai()
+        resp = client.chat.completions.create(
+            model=LLM_SELECT_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0,
+            response_format={"type": "json_object"},
+        )
+        raw = resp.choices[0].message.content or "{}"
+        data = json.loads(raw)
+        picks = data.get("picks", [])
+    except Exception as e:
+        print(f"[llm_select] failed ({type(e).__name__}: {e}); falling back to rerank order")
+        out = []
+        for i, c in enumerate(short[:top_k]):
+            label = "★ 推薦" if i == 0 else f"備選 {i}"
+            c2 = dict(c)
+            c2["rank_label"] = label
+            c2["llm_reason"] = "(LLM 失敗,沿用 rerank 排序)"
+            out.append(c2)
+        return out
+
+    seen = set()
+    out = []
+    for p in picks:
+        doc_id = p.get("doc_id")
+        if not isinstance(doc_id, int) or doc_id < 1 or doc_id > len(short) or doc_id in seen:
+            continue
+        seen.add(doc_id)
+        c2 = dict(short[doc_id - 1])
+        c2["rank_label"] = (p.get("rank") or "").strip() or (
+            "★ 推薦" if not out else f"備選 {len(out)}"
+        )
+        c2["llm_reason"] = (p.get("reason") or "").strip()
+        c2["llm_name"] = (p.get("name") or "").strip()
+        out.append(c2)
+        if len(out) >= top_k:
+            break
+
+    # Pad if LLM returned fewer than top_k valid picks
+    for i, c in enumerate(short):
+        if len(out) >= top_k:
+            break
+        if (i + 1) in seen:
+            continue
+        c2 = dict(c)
+        c2["rank_label"] = "★ 推薦" if not out else f"備選 {len(out)}"
+        c2["llm_reason"] = "(LLM 未挑選,沿用 rerank 補位)"
+        out.append(c2)
+    return out
+
+
 def search(query: str, top_k: int = 5):
-    """Retrieve + qwen rerank. Returns a list of dicts shaped for the web UI."""
+    """Hybrid retrieve → BGE rerank → GPT-4o select. Returns 5 dicts shaped for the UI."""
     if not _state:
         initialize()
+    _load_annotations()
     specs = _decompose_query(query)
     valid = _metadata_filter(specs, _state["chunk_metas"])
     expanded = _expand_specs(query)
     bm25_q = _add_synonyms(query)
     candidates = _hybrid_retrieve(expanded, bm25_q, RETRIEVE_K, valid)
-    reranked = _bge_rerank(query, candidates, top_k=top_k)
+    reranked = _bge_rerank(query, candidates, top_k=LLM_SELECT_CANDIDATES)
+    picked = _llm_select(query, reranked, top_k=top_k)
 
     results = []
-    for c in reranked:
+    for c in picked:
         m = c["metadata"]
         page = m.get("page", 0)
+        cat = m.get("category", "")
+        llm_name = c.get("llm_name", "")
+        raw_name = m.get("series_name", "")
+        # Preference: clean LLM-extracted name > clean regex-extracted name > fallback
+        if llm_name and not _is_bad_name(llm_name):
+            name = llm_name
+        elif raw_name and not _is_bad_name(raw_name):
+            name = raw_name
+        else:
+            name = _fallback_name(c["text"], page, cat)
         results.append({
             "page": page,
-            "name": m.get("series_name") or f"第{page}頁產品",
+            "name": name,
             "models": m.get("models", ""),
             "category": m.get("category", ""),
             "wattages": m.get("wattages", ""),
@@ -420,7 +708,8 @@ def search(query: str, top_k: int = 5):
             "lumens": m.get("lumens", ""),
             "ip_rating": m.get("ip_rating", ""),
             "features": m.get("features", ""),
+            "rank_label": c.get("rank_label", ""),
+            "reason": c.get("llm_reason", ""),
             "score": round(float(c.get("rerank_score", 0)), 2),
-            "reason": c.get("rerank_reason", ""),
         })
     return results
