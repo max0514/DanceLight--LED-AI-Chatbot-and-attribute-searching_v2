@@ -1,7 +1,7 @@
 """Flask web UI for dancelight RAG: BGE hybrid retrieve + GPT-4o LLM selection.
 
 Run:
-    cd ~/dancelight-rag-repo && python3 dancelight_web_app.py
+    cd /root/dancelight-rag-repo && python3 -m web.app
 Then open http://<host>:8000/
 
 Queries and LLM picks are logged to ./dancelight_queries.db (SQLite).
@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 import fitz
 from flask import Flask, g, jsonify, render_template, request, send_file
 
-import rag_engine
+from rag import engine as rag_engine
 
 app = Flask(__name__)
 

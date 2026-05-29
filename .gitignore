@@ -24,3 +24,9 @@ output_opendataloader/
 # Virtualenv
 .venv/
 venv/
+
+# Claude Code local override (committed: .claude/settings.json)
+.claude/settings.local.json
+
+# Pytest
+.pytest_cache/
