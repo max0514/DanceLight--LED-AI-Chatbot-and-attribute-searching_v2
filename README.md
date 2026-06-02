@@ -1,3 +1,7 @@
+
+
+<img width="704" height="396" alt="image" src="https://github.com/user-attachments/assets/7d845cc8-45a7-41f5-928f-9a788da5120c" />
+
 # Dancelight RAG
 
 Hybrid retrieval-augmented generation over the **2025 舞光 LED 21st 型錄**
