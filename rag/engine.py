@@ -23,11 +23,28 @@ from sentence_transformers import CrossEncoder, SentenceTransformer
 
 load_dotenv(".env")
 
-PDF_PATH = "./2025舞光LED21st(單頁水印可搜尋).pdf"
-ODL_JSON = "./output_opendataloader/2025舞光LED21st(單頁水印可搜尋).json"
+DEFAULT_EDITION = "22nd"
+CORPUS = {
+    "21st": {
+        "label": "21 版 (2025, 388頁)",
+        "pdf": "./2025舞光LED21st(單頁水印可搜尋).pdf",
+        "odl_json": "./output_opendataloader/2025舞光LED21st(單頁水印可搜尋).json",
+        "embed_cache": "./bge_m3_embeddings/chunk_embeddings_21st.npy",
+    },
+    "22nd": {
+        "label": "22 版 (2026, 420頁)",
+        "pdf": "./2026舞光LED22st(單頁).pdf",
+        "odl_json": "./output_opendataloader/2026舞光LED22st(單頁).json",
+        "embed_cache": "./bge_m3_embeddings/chunk_embeddings_22nd.npy",
+    },
+}
+
+# Backward-compat exports: default to the DEFAULT_EDITION corpus.
+PDF_PATH = CORPUS[DEFAULT_EDITION]["pdf"]
+ODL_JSON = CORPUS[DEFAULT_EDITION]["odl_json"]
 ODL_DIR = "./output_opendataloader"
 IMG_CACHE_FILE = "./img_descriptions_cache.json"
-EMBED_CACHE = "./bge_m3_embeddings/chunk_embeddings.npy"
+EMBED_CACHE = CORPUS[DEFAULT_EDITION]["embed_cache"]
 ANNOTATIONS_CACHE = "./annotations_cache.json"
 
 EMBED_MODEL = "BAAI/bge-m3"
@@ -37,17 +54,27 @@ LLM_SELECT_MODEL = "gpt-4o"
 LOCAL_LLM = LLM_SELECT_MODEL
 
 MIN_IMG_SIZE = 30_000
-RETRIEVE_K = 50
-RERANK_CANDIDATES = 20
-LLM_SELECT_CANDIDATES = 20
+RETRIEVE_K = 100             # was 50 — strict-rerank wants a wider pool
+RERANK_CANDIDATES = 20       # legacy BGE rerank (no longer called by search)
+LLM_SELECT_CANDIDATES = 20   # legacy LLM_SELECT_PROMPT path (no longer called by search)
+STRICT_RERANK_N = 30         # candidates handed to STRICT_RERANK_PROMPT
 BM25_WEIGHT = 0.5
 VECTOR_WEIGHT = 0.5
 
-_state: dict = {}
+_states: dict[str, dict] = {}     # edition → state dict
 _query_embed_model = None
 _reranker = None
 _openai_client = None
 _annotation_db: dict = {}
+
+
+def _get_state(edition: str) -> dict:
+    """Return state for the given edition, initializing on first access."""
+    if edition not in CORPUS:
+        raise ValueError(f"unknown edition {edition!r}; valid: {list(CORPUS)}")
+    if edition not in _states:
+        initialize(edition)
+    return _states[edition]
 
 
 LAMP_TERMS = [
@@ -264,11 +291,11 @@ def _embed_query(query):
     return emb.astype(np.float32)
 
 
-def _hybrid_retrieve(query, bm25_query, top_k, valid_indices):
-    bm25 = _state["bm25"]
-    chunks = _state["chunks"]
-    metas = _state["chunk_metas"]
-    embs = _state["chunk_embeddings"]
+def _hybrid_retrieve(state, query, bm25_query, top_k, valid_indices):
+    bm25 = state["bm25"]
+    chunks = state["chunks"]
+    metas = state["chunk_metas"]
+    embs = state["chunk_embeddings"]
 
     qt = list(jieba.cut(bm25_query))
     bm25_scores = bm25.get_scores(qt)
@@ -329,13 +356,23 @@ def _bge_rerank(query, candidates, top_k):
     return candidates[:top_k]
 
 
-def initialize():
-    """Build chunks, BM25 index, and load the cached embeddings. Idempotent."""
-    if _state:
-        return
+def initialize(edition: str | None = None):
+    """Build chunks, BM25 index, load embeddings. Idempotent per edition.
 
-    print("[rag_engine] Loading PDF text via PyMuPDF...")
-    doc = fitz.open(PDF_PATH)
+    edition=None → load every edition listed in CORPUS (used at startup).
+    edition='21st'|'22nd' → load just that one (used by lazy _get_state).
+    """
+    targets = list(CORPUS) if edition is None else [edition]
+    for ed in targets:
+        if ed in _states:
+            continue
+        _initialize_one(ed)
+
+
+def _initialize_one(edition: str):
+    cfg = CORPUS[edition]
+    print(f"[rag_engine] Loading PDF text for {edition} via PyMuPDF...")
+    doc = fitz.open(cfg["pdf"])
     pymupdf_texts = {}
     for i in range(len(doc)):
         t = doc[i].get_text().strip()
@@ -343,8 +380,8 @@ def initialize():
             pymupdf_texts[i + 1] = t
     doc.close()
 
-    print("[rag_engine] Loading opendataloader image metadata...")
-    with open(ODL_JSON, "r") as f:
+    print(f"[rag_engine] Loading opendataloader image metadata for {edition}...")
+    with open(cfg["odl_json"], "r") as f:
         odl_data = json.load(f)
     odl_images = {}
     for kid in odl_data["kids"]:
@@ -365,7 +402,7 @@ def initialize():
         if descs:
             page_img_descs[pn] = descs
 
-    print("[rag_engine] Chunking...")
+    print(f"[rag_engine] Chunking {edition}...")
     chunks, metas = [], []
     for pn in sorted(pymupdf_texts.keys()):
         text = pymupdf_texts[pn]
@@ -380,26 +417,48 @@ def initialize():
                           "models": "", "wattages": "", "color_temps": "",
                           "lumens": "", "ip_rating": "", "features": ""})
 
-    print(f"[rag_engine] {len(chunks)} chunks")
+    print(f"[rag_engine] {edition}: {len(chunks)} chunks")
 
     for term in LAMP_TERMS:
         jieba.add_word(term)
     tokenized = [[t.strip() for t in jieba.cut(c) if t.strip()] for c in chunks]
     bm25 = BM25Okapi(tokenized)
 
-    if not os.path.exists(EMBED_CACHE):
-        raise RuntimeError(f"Embedding cache missing: {EMBED_CACHE}. "
-                           "Run the v7 pipeline (dancelight_rag2.0_2026-04-29/"
-                           "dancelight_rag_test.py) once to build it.")
-    embs = np.load(EMBED_CACHE)
-    if embs.shape[0] != len(chunks):
-        raise RuntimeError(f"Embedding cache has {embs.shape[0]} rows but "
-                           f"chunker produced {len(chunks)} chunks. "
-                           "Delete the cache and rebuild.")
+    embed_cache = cfg["embed_cache"]
+    if os.path.exists(embed_cache):
+        embs = np.load(embed_cache)
+        if embs.shape[0] != len(chunks):
+            print(f"[rag_engine] {edition} embedding cache has {embs.shape[0]} rows "
+                  f"but chunker produced {len(chunks)} — rebuilding")
+            embs = _build_chunk_embeddings(chunks, embed_cache)
+    else:
+        print(f"[rag_engine] no embedding cache at {embed_cache} — building")
+        embs = _build_chunk_embeddings(chunks, embed_cache)
 
-    _state.update({"chunks": chunks, "chunk_metas": metas,
-                   "bm25": bm25, "chunk_embeddings": embs})
-    print(f"[rag_engine] ready — embeddings {embs.shape}")
+    _states[edition] = {
+        "edition": edition,
+        "pdf_path": cfg["pdf"],
+        "chunks": chunks, "chunk_metas": metas,
+        "bm25": bm25, "chunk_embeddings": embs,
+    }
+    print(f"[rag_engine] {edition} ready — embeddings {embs.shape}")
+
+
+def _build_chunk_embeddings(chunks: list[str], cache_path: str) -> np.ndarray:
+    """Embed all chunks with BGE-M3 and persist to cache_path.
+
+    Called automatically by _initialize_one() when the cache is missing or stale.
+    Per rag/CONTRACT.md: 'If embed_cache is missing, embeds all chunks
+    (slow — minutes on GPU, hours on CPU).'
+    """
+    model = _get_query_embedder()
+    print(f"[rag_engine] embedding {len(chunks)} chunks with {EMBED_MODEL}...")
+    embs = model.encode(chunks, batch_size=8, show_progress_bar=True,
+                        normalize_embeddings=True).astype(np.float32)
+    os.makedirs(os.path.dirname(cache_path), exist_ok=True)
+    np.save(cache_path, embs)
+    print(f"[rag_engine] wrote {embs.shape} → {cache_path}")
+    return embs
 
 
 def _md5_key(text: str) -> str:
@@ -619,6 +678,7 @@ def _llm_select(query, candidates, top_k=5):
     context = _build_llm_context(short)
     prompt = LLM_SELECT_PROMPT.format(n=len(short), query=query, context=context)
 
+    picks = None
     try:
         client = _get_openai()
         resp = client.chat.completions.create(
@@ -628,10 +688,12 @@ def _llm_select(query, candidates, top_k=5):
             response_format={"type": "json_object"},
         )
         raw = resp.choices[0].message.content or "{}"
-        data = json.loads(raw)
-        picks = data.get("picks", [])
-    except Exception as e:
-        print(f"[llm_select] failed ({type(e).__name__}: {e}); falling back to rerank order")
+        picks = json.loads(raw).get("picks", [])
+    except Exception as openai_err:
+        print(f"[llm_select] OpenAI failed ({type(openai_err).__name__}: "
+              f"{str(openai_err)[:120]}); falling back to rerank order")
+
+    if not picks:
         out = []
         for i, c in enumerate(short[:top_k]):
             label = "★ 推薦" if i == 0 else f"備選 {i}"
@@ -671,18 +733,123 @@ def _llm_select(query, candidates, top_k=5):
     return out
 
 
-def search(query: str, top_k: int = 5):
-    """Hybrid retrieve → BGE rerank → GPT-4o select. Returns 5 dicts shaped for the UI."""
-    if not _state:
-        initialize()
+STRICT_RERANK_PROMPT = """你是舞光 LED 型錄檢索評選員。客戶用自然語言描述需求,你拿到 {n} 個候選型錄段落,
+要選出最匹配的 5 個。請對每個候選逐項評分,再選總分前 5。
+
+【客戶需求】
+{query}
+
+【需求解析(輔助,可能不完整)】
+{specs_summary}
+
+【評分標準】(每項 0-10 分)
+1. **類別匹配**:候選段落的「類別」欄位是否與客戶需求對應的類別一致(同義詞如階梯燈≈步道燈、崁入筒燈≈崁燈算一致;不同產品線給 0 分)。
+2. **瓦數匹配**:候選的瓦數是否落在客戶要求範圍內或接近(±30% 算近似)。客戶未指定瓦數時給滿分。
+3. **色溫 / 光通量 / IP 等級**:逐項比對,符合得分。客戶未指定者給滿分。
+4. **完整型號族**:候選段落含有客戶可能想要的型號族(同一前綴 / 同類功能),加分。
+5. **加分項**:防眩、節能標章、感應、調光等若客戶提到才算分。
+
+【硬規則】
+- 若客戶明確要求「IP66 或以上」,候選 IP 低於 66 直接 0 分(類別欄位無 IP 訊息者除外)。
+- 若候選明顯是品牌頁、目錄索引、實驗室照片,不選。
+- 候選有「步道燈、車道燈、戶外、IP」字眼時優先考慮戶外/景觀需求。
+- 即使所有候選都不完美,仍要選出 5 個(挑相對最接近的),不要返回少於 5 個。
+- **型號前綴差異**:當有多個候選類別相同、瓦數相同、且型號前綴不同(如 LED-、D-、OD- 並存),
+  「D-」/「OD-」前綴往往代表較新或特殊系列,「LED-」是舊系列。**請把不同前綴的同類產品都放入 top-5**,
+  不要只挑 LED- 變體而忽略 D-/OD- 型號族。
+- 客戶提到「樓梯」/「階梯」時,優先 IP65+ 的崁燈/步道燈,避免一般室內崁燈。
+- 客戶提到「玻璃燈罩」時,優先含「玻璃」、「燈罩」、「索爾」、「黑鑽」等關鍵詞的型號。
+
+【輸出格式】JSON,picks 陣列 5 筆,從最佳到次佳:
+{{
+  "picks": [
+    {{"doc_id": <1~{n}>, "name": "<產品系列名>", "score_breakdown": "類別X 瓦數X IP X ...", "reason": "<25 字內>"}},
+    ...
+  ]
+}}
+
+【候選段落】
+{context}"""
+
+
+def _strict_llm_rerank(query: str, specs: dict, candidates: list[dict],
+                       top_k: int, n: int) -> list[dict]:
+    """GPT-4o strict-scored rerank. Replaces the BGE-rerank + LLM_SELECT path.
+
+    Graduated from experiment.engine 2026-06-10 after the strict30/pure config
+    scored 9/15 hit@5 on question.xlsx (vs 4/15 for the v7 BGE-rerank path).
+    """
+    deduped = _dedup_candidates(candidates)
+    short = deduped[:n]
+    if not short:
+        return []
+    specs_lines = [f"{k}={v}" for k, v in specs.items()]
+    specs_summary = "; ".join(specs_lines) if specs_lines else "(無 spec 抽取)"
+    context = _build_llm_context(short, per_doc=900)
+    prompt = STRICT_RERANK_PROMPT.format(n=len(short), query=query,
+                                         specs_summary=specs_summary,
+                                         context=context)
+    picks: list = []
+    try:
+        client = _get_openai()
+        resp = client.chat.completions.create(
+            model=LLM_SELECT_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0,
+            response_format={"type": "json_object"},
+        )
+        picks = json.loads(resp.choices[0].message.content or "{}").get("picks", [])
+    except Exception as e:
+        print(f"[strict_llm_rerank] fail ({type(e).__name__}: "
+              f"{str(e)[:120]}); padding from hybrid order")
+
+    seen: set[int] = set()
+    out: list[dict] = []
+    for p in picks:
+        doc_id = p.get("doc_id")
+        if not isinstance(doc_id, int) or doc_id < 1 or doc_id > len(short) or doc_id in seen:
+            continue
+        seen.add(doc_id)
+        c2 = dict(short[doc_id - 1])
+        c2["rank_label"] = "★ 推薦" if not out else f"備選 {len(out)}"
+        c2["llm_reason"] = (p.get("reason") or "").strip()
+        c2["llm_name"] = (p.get("name") or "").strip()
+        c2["llm_breakdown"] = (p.get("score_breakdown") or "").strip()
+        out.append(c2)
+        if len(out) >= top_k:
+            break
+    # Pad with hybrid order if strict LLM returned fewer than top_k valid picks
+    for i, c in enumerate(short):
+        if len(out) >= top_k:
+            break
+        if (i + 1) in seen:
+            continue
+        c2 = dict(c)
+        c2["rank_label"] = "★ 推薦" if not out else f"備選 {len(out)}"
+        c2["llm_reason"] = "(LLM 未挑選,沿用 hybrid 補位)"
+        c2["llm_breakdown"] = ""
+        out.append(c2)
+    return out
+
+
+def search(query: str, top_k: int = 5, *, edition: str = DEFAULT_EDITION):
+    """Hybrid retrieve → strict-scored GPT-4o rerank. Returns 5 dicts shaped for the UI.
+
+    Pipeline as of the strict30/pure graduation (2026-06-10):
+      hybrid_retrieve(k=100) → _strict_llm_rerank(STRICT_RERANK_PROMPT, n=30) → top 5
+    Skips the standalone BGE cross-encoder rerank; the strict prompt's explicit
+    category/wattage/IP scoring outperforms it on question.xlsx (9/15 vs 4/15).
+
+    edition selects which catalog version to search ('21st' or '22nd', default '22nd').
+    """
+    state = _get_state(edition)
     _load_annotations()
     specs = _decompose_query(query)
-    valid = _metadata_filter(specs, _state["chunk_metas"])
+    valid = _metadata_filter(specs, state["chunk_metas"])
     expanded = _expand_specs(query)
     bm25_q = _add_synonyms(query)
-    candidates = _hybrid_retrieve(expanded, bm25_q, RETRIEVE_K, valid)
-    reranked = _bge_rerank(query, candidates, top_k=LLM_SELECT_CANDIDATES)
-    picked = _llm_select(query, reranked, top_k=top_k)
+    candidates = _hybrid_retrieve(state, expanded, bm25_q, RETRIEVE_K, valid)
+    picked = _strict_llm_rerank(query, specs, candidates, top_k=top_k, n=STRICT_RERANK_N)
 
     results = []
     for c in picked:
@@ -710,6 +877,7 @@ def search(query: str, top_k: int = 5):
             "features": m.get("features", ""),
             "rank_label": c.get("rank_label", ""),
             "reason": c.get("llm_reason", ""),
-            "score": round(float(c.get("rerank_score", 0)), 2),
+            "llm_breakdown": c.get("llm_breakdown", ""),
+            "score": round(float(c.get("rerank_score", c.get("score", 0))), 2),
         })
     return results

@@ -20,6 +20,8 @@ whether changes helped or hurt.
 | File | Purpose |
 |---|---|
 | `pipeline.py` | The whole benchmark — chunking, retrieval, rerank, LLM call, scoring. Notebook-style: top-to-bottom executable. |
+| `hyde_llm_rerank_experiment.py` | One-off ablation (2026-06-08): HyDE × LLM-rerank on `Training.xlsx`. See `specs/hyde-llm-rerank-experiment.md` for results. **Conclusion: don't adopt.** |
+| `rerank_metadata_tuning_experiment.py` | One-off ablation (2026-06-08): rerank-query enrichment × metadata-filter strength on `question.xlsx` (17 Q). See `specs/rerank-query-and-metadata-filter-tuning.md`. **Conclusion: adopt C (enrich rerank query); skip B/D.** |
 | `CONTRACT.md` | Inputs / outputs / config (stable; spec-gated). |
 
 ## How to use it (from outside)
@@ -43,4 +45,6 @@ cat rag_results.xlsx                      # inspect per-question results
 
 ## Last updated
 
+2026-06-08 — added `rerank_metadata_tuning_experiment.py` (rerank-query enrichment; C variant adopted into engine).
+2026-06-08 — added `hyde_llm_rerank_experiment.py` (HyDE ablation; not adopted).
 2026-05-29 — moved from root `dancelight_rag.py` into `research/` package, added contract + summary.

@@ -163,9 +163,9 @@ load_dotenv('.env')
 openai_client = OpenAI()
 
 # ── 設定 ──
-PDF_PATH = "./2025舞光LED21st(單頁水印可搜尋).pdf"
-ODL_JSON = "./output_opendataloader/2025舞光LED21st(單頁水印可搜尋).json"
-ODL_IMG_DIR = "./output_opendataloader/2025舞光LED21st(單頁水印可搜尋)_images"
+PDF_PATH = "./2026舞光LED22st(單頁).pdf"
+ODL_JSON = "./output_opendataloader/2026舞光LED22st(單頁).json"
+ODL_IMG_DIR = "./output_opendataloader/2026舞光LED22st(單頁)_images"
 QUESTION_XLSX = "./question.xlsx"
 ANSWER_XLSX   = "./answer.xlsx"
 CHROMA_DIR = "./chroma_rag_v3"

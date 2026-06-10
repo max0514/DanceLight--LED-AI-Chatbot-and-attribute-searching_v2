@@ -4,8 +4,11 @@
 
 # Dancelight RAG
 
-Hybrid retrieval-augmented generation over the **2025 舞光 LED 21st 型錄**
-(388-page Chinese product PDF). Combines lexical search (BM25 with a jieba
+Hybrid retrieval-augmented generation over the **舞光 LED 型錄**. The web
+app serves **two editions side by side** — 22nd (2026, 420 pages) as the
+default, 21st (2025, 388 pages) as a toggle — each with its own embedding
+cache; users pick the edition from a header control. Combines lexical
+search (BM25 with a jieba
 dictionary of lamp-domain terms), dense semantic embeddings, a cross-encoder
 reranker, regex-extracted metadata, and a category synonym taxonomy to surface
 the right product family for a free-form natural-language query.
@@ -213,11 +216,15 @@ GET /api/page_image/123.png ──►
 ## Prerequisites
 
 - **Python 3.10+**
-- **The PDF** — `2025舞光LED21st(單頁水印可搜尋).pdf` placed at the repo root.
-  Not in git (copyright; 168 MB). Obtain from 舞光 LED.
+- **The PDF** — `2026舞光LED22st(單頁).pdf` placed at the repo root.
+  Not in git (copyright; 381 MB). Obtain from 舞光 LED.
 - **opendataloader output** — the JSON layout extraction of the same PDF,
-  placed at `./output_opendataloader/2025舞光LED21st(單頁水印可搜尋).json`.
-  Regenerate with [opendataloader](https://github.com/opendataloader/opendataloader).
+  placed at `./output_opendataloader/2026舞光LED22st(單頁).json` with images
+  in the sibling `..._images/` directory.
+  Generate with [`opendataloader-pdf`](https://github.com/opendataloader-project/opendataloader-pdf).
+  Note: this codebase uses a patched JSON where every image kid's `source`
+  points at a single page-render PNG (one PNG per page) — see
+  `scripts/` if you need to reproduce the patch.
 - **Ollama** with two models pulled — only needed for the research pipeline:
   ```bash
   ollama pull minicpm-v          # vision captions (one-time, cached)
@@ -243,8 +250,8 @@ cp .env.example .env
 # annotations_cache.json — the shipped cache is sufficient for read-only use).
 
 # Place the PDF and opendataloader output at the repo root:
-#   ./2025舞光LED21st(單頁水印可搜尋).pdf
-#   ./output_opendataloader/2025舞光LED21st(單頁水印可搜尋).json
+#   ./2026舞光LED22st(單頁).pdf
+#   ./output_opendataloader/2026舞光LED22st(單頁).json
 ```
 
 ---

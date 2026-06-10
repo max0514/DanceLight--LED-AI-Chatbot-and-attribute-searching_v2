@@ -7,9 +7,14 @@
 ## What this module does
 
 Given a natural-language Chinese product spec (e.g. "15W崁燈 6500K"), returns
-the top-5 matching products from the 388-page 舞光 LED catalog, with a
-GPT-4o-generated rationale per pick. The pipeline is BM25 + BGE-M3 dense
-hybrid retrieval → bge-reranker cross-encoder → GPT-4o final selection.
+the top-5 matching products from the 舞光 LED catalog (two editions
+selectable at runtime, 22nd-edition 420 pages default), with a GPT-4o
+rationale per pick. The pipeline is BM25 + BGE-M3 dense hybrid retrieval
+(top-100) → strict-scored GPT-4o rerank (top-30 → top-5). The standalone
+BGE cross-encoder rerank is no longer in the search path; the strict
+prompt's explicit category/wattage/IP scoring outperformed it (9/15 vs
+4/15 hit@5 on question.xlsx, graduated 2026-06-10 from
+`experiment/engine.py`'s `strict30/pure` config).
 
 ## Key files
 

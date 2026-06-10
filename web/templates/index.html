@@ -179,6 +179,35 @@ h1 {
   color: var(--c-primary); outline: none;
 }
 
+/* ── edition selector ────────────────────────────────────────────────── */
+.edition-toggle {
+  display: inline-flex; gap: 0;
+  margin-block-start: var(--s-3);
+  padding: 2px;
+  background: var(--c-surface-muted);
+  border: 1px solid var(--c-border);
+  border-radius: 999px;
+  box-shadow: var(--shadow-1);
+}
+.edition-btn {
+  appearance: none; border: 0; background: transparent;
+  padding: var(--s-1) var(--s-4);
+  border-radius: 999px;
+  font-size: var(--fs-xs); color: var(--c-ink-700);
+  cursor: pointer;
+  transition: background var(--motion), color var(--motion);
+}
+.edition-btn:hover { color: var(--c-ink-900); }
+.edition-btn.is-active {
+  background: var(--c-surface);
+  color: var(--c-primary);
+  font-weight: 600;
+  box-shadow: var(--shadow-1);
+}
+.edition-btn:focus-visible {
+  outline: 2px solid var(--c-primary); outline-offset: 1px;
+}
+
 /* ── results ────────────────────────────────────────────────────────── */
 .results {
   display: grid; gap: var(--s-4);
@@ -548,6 +577,15 @@ h1 {
       <code>bge-reranker-v2-m3</code> cross-encoder 重排，最後由
       <code>{{ llm }}</code> 從 20 個候選中挑出「★ 推薦 + 4 備選」並附說明。
     </p>
+    <div class="edition-toggle" role="radiogroup" aria-label="型錄版本">
+      {% for e in editions %}
+      <button class="edition-btn{% if e.key == default_edition %} is-active{% endif %}"
+              type="button" role="radio"
+              aria-checked="{{ 'true' if e.key == default_edition else 'false' }}"
+              data-edition="{{ e.key }}"
+              onclick="setEdition('{{ e.key }}')">{{ e.label }}</button>
+      {% endfor %}
+    </div>
   </header>
 
   <section class="searchbar" role="search">
@@ -601,6 +639,19 @@ h1 {
 </div>
 
 <script>
+let currentEdition = {{ default_edition | tojson }};
+const pdfTotalPagesByEdition = {};
+
+function setEdition(ed) {
+  if (ed === currentEdition) return;
+  currentEdition = ed;
+  document.querySelectorAll('.edition-btn').forEach((b) => {
+    const on = b.dataset.edition === ed;
+    b.classList.toggle('is-active', on);
+    b.setAttribute('aria-checked', on ? 'true' : 'false');
+  });
+}
+
 function fill(s) {
   const q = document.getElementById('q');
   q.value = s; q.focus(); go();
@@ -617,7 +668,7 @@ async function go() {
     const r = await fetch('/api/search', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({query: q}),
+      body: JSON.stringify({query: q, edition: currentEdition}),
     });
     const data = await r.json();
     if (!r.ok) throw new Error(data.error || ('HTTP ' + r.status));
@@ -688,7 +739,7 @@ function render(results) {
     parts.push(specRow('特色', r.features));
     parts.push('</dl>');
     parts.push('<figure>');
-    parts.push(`<img loading="lazy" src="/api/page_image/${r.page}.png" alt="型錄第 ${r.page} 頁預覽" onclick="event.stopPropagation();openPdf(${r.page})">`);
+    parts.push(`<img loading="lazy" src="/api/page_image/${currentEdition}/${r.page}.png" alt="型錄第 ${r.page} 頁預覽" onclick="event.stopPropagation();openPdf(${r.page})">`);
     parts.push(`<figcaption>點圖放大瀏覽型錄 · p.${r.page}</figcaption>`);
     parts.push('</figure>');
     parts.push('</aside>');
@@ -721,11 +772,17 @@ let pdfCurrentPage = 1;
 const PDF_MODAL_DPI = 180;
 
 async function ensurePdfMeta() {
-  if (pdfTotalPages !== null) return;
+  if (pdfTotalPagesByEdition[currentEdition]) {
+    pdfTotalPages = pdfTotalPagesByEdition[currentEdition];
+    document.getElementById('pdfTotal').textContent = pdfTotalPages;
+    document.getElementById('pdfPageInput').max = pdfTotalPages;
+    return;
+  }
   try {
-    const r = await fetch('/api/pdf_meta');
+    const r = await fetch('/api/pdf_meta?edition=' + encodeURIComponent(currentEdition));
     const d = await r.json();
     pdfTotalPages = d.total_pages || 1;
+    pdfTotalPagesByEdition[currentEdition] = pdfTotalPages;
     document.getElementById('pdfTotal').textContent = pdfTotalPages;
     document.getElementById('pdfPageInput').max = pdfTotalPages;
   } catch {
@@ -774,7 +831,7 @@ function renderPdfPage() {
   img.alt = `型錄第 ${pdfCurrentPage} 頁`;
   img.onload = () => stage.classList.remove('loading');
   img.onerror = () => stage.classList.remove('loading');
-  img.src = `/api/page_image/${pdfCurrentPage}.png?dpi=${PDF_MODAL_DPI}`;
+  img.src = `/api/page_image/${currentEdition}/${pdfCurrentPage}.png?dpi=${PDF_MODAL_DPI}`;
 }
 
 document.addEventListener('keydown', (e) => {

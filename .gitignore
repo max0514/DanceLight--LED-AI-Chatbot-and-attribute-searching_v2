@@ -4,6 +4,9 @@
 # Logs & outputs
 *.log
 rag_results*.xlsx
+research/hyde_llm_rerank_results.xlsx
+research/.hyde_cache.json
+research/rerank_metadata_tuning_results.xlsx
 
 # Local query/feedback database
 *.db
@@ -18,8 +21,12 @@ __pycache__/
 
 # Large source data — must be obtained separately (see README)
 2025舞光LED21st*.pdf
+2026舞光LED22st*.pdf
 output_opendataloader
 output_opendataloader/
+
+# Experimental ColBERT cache — 488 MB, exceeds GitHub's 100 MB limit; rebuild via experiment/engine.py
+bge_m3_embeddings/chunk_tokens.npz
 
 # Virtualenv
 .venv/

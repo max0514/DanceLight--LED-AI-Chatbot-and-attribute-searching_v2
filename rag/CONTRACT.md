@@ -9,23 +9,32 @@ Changes to this file require a corresponding `specs/<feature>.md`.
 
 ## Public API
 
-### `rag.engine.initialize() -> None`
+### `rag.engine.initialize(edition: str | None = None) -> None`
 
 Build chunks + BM25 index, load cached BGE-M3 embeddings, lazy-init reranker
-on first `search()` call. **Idempotent** — safe to call repeatedly; subsequent
-calls are near-zero cost.
+on first `search()` call. **Idempotent per edition** — safe to call
+repeatedly; subsequent calls are near-zero cost.
 
-**Side effects**: reads `PDF_PATH`, `ODL_JSON`, `IMG_CACHE_FILE`,
-`EMBED_CACHE`, `ANNOTATIONS_CACHE` (paths below). If `EMBED_CACHE` is missing,
-embeds all chunks (slow — minutes on GPU, hours on CPU).
+`edition=None` (default) loads every edition listed in `CORPUS` — used by the
+web app at startup so both 21st and 22nd are warm. A specific string
+(`"21st"` or `"22nd"`) loads just that one — used by `search()`'s lazy path.
 
-**Raises**: `FileNotFoundError` if `PDF_PATH` or `ODL_JSON` is missing.
+**Side effects**: reads each edition's `pdf` + `odl_json`, plus the shared
+`IMG_CACHE_FILE` and `ANNOTATIONS_CACHE`. If an edition's `embed_cache` is
+missing, embeds all of that edition's chunks (slow — minutes on GPU, hours
+on CPU). The annotations cache is shared across editions (md5-keyed by chunk
+text).
+
+**Raises**: `FileNotFoundError` if a corpus's PDF or ODL JSON is missing.
 
 ---
 
-### `rag.engine.search(query: str, top_k: int = 5) -> list[dict]`
+### `rag.engine.search(query: str, top_k: int = 5, *, edition: str = "22nd") -> list[dict]`
 
-End-to-end pipeline: hybrid retrieve → BGE rerank → GPT-4o select.
+End-to-end pipeline: hybrid retrieve (BM25 + dense, top-100) →
+**strict-scored GPT-4o rerank** of top-30 → returns top-5. Graduated 2026-06-10
+from `experiment/engine.py`'s `strict30/pure` config; outperforms the prior
+BGE-cross-encoder + LLM-select path on question.xlsx (9/15 vs 4/15 hit@5).
 
 **Inputs**:
 - `query` — natural-language Chinese product spec (e.g. `"15W崁燈 6500K"`).
@@ -47,8 +56,9 @@ End-to-end pipeline: hybrid retrieve → BGE rerank → GPT-4o select.
     "lumens": str,
     "ip_rating": str,
     "features": str,                   # comma-separated tags
-    "score": float,                    # LLM-assigned 0.0–1.0 confidence
-    "reason": str,                     # LLM-generated rationale (one short sentence)
+    "score": float,                    # hybrid-retrieve score (0.0–1.0); not LLM-assigned
+    "reason": str,                     # LLM-generated rationale (≤25 字)
+    "llm_breakdown": str,              # NEW (2026-06-10): per-dimension score breakdown from strict rerank, e.g. "類別10 瓦數8 IP10 ..."
 }
 ```
 
@@ -62,7 +72,9 @@ End-to-end pipeline: hybrid retrieve → BGE rerank → GPT-4o select.
 
 - `LLM_SELECT_MODEL: str` — currently `"gpt-4o"`. The model used for final selection.
 - `LOCAL_LLM: str` — alias for `LLM_SELECT_MODEL`. Used by UI label.
-- `PDF_PATH: str` — `"./2025舞光LED21st(單頁水印可搜尋).pdf"`. The catalog source.
+- `DEFAULT_EDITION: str` — currently `"22nd"`. The edition used when `search()` is called without an explicit `edition`.
+- `CORPUS: dict[str, dict]` — mapping of edition key → `{label, pdf, odl_json, embed_cache}`. Iterate `CORPUS.items()` to enumerate available editions (e.g. for a UI selector).
+- `PDF_PATH: str` — `CORPUS[DEFAULT_EDITION]["pdf"]`. Backward-compat shim; new code should read `CORPUS[edition]["pdf"]` instead.
 - `EMBED_MODEL: str` — `"BAAI/bge-m3"`.
 - `RERANK_MODEL: str` — `"BAAI/bge-reranker-v2-m3"`.
 
@@ -89,6 +101,7 @@ adjust their environment.
 - Changing `search()` return dict keys or value types.
 - Changing the `rank_label` enum values.
 - Changing the LLM provider or model in a way that alters output shape.
+- Removing an edition from `CORPUS` (callers may hard-code keys).
 
 **NON-BREAKING** (safe in minor changes):
 - Adding new fields to the result dict.

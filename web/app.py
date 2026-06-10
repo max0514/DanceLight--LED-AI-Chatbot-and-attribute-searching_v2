@@ -13,9 +13,13 @@ import time
 from datetime import datetime, timezone
 
 import fitz
+from dotenv import load_dotenv
 from flask import Flask, g, jsonify, render_template, request, send_file
 
+load_dotenv(".env")
+
 from rag import engine as rag_engine
+from web import line_handler as line_module
 
 app = Flask(__name__)
 
@@ -63,22 +67,49 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_feedback_query ON feedback(query_id);
         """
     )
+    # Idempotent ALTER for the dual-edition rollout.
+    cols = {row[1] for row in con.execute("PRAGMA table_info(queries)").fetchall()}
+    if "edition" not in cols:
+        con.execute("ALTER TABLE queries ADD COLUMN edition TEXT")
     con.commit()
     con.close()
 
 
-print("[web] Initializing RAG engine...")
-rag_engine.initialize()
-print("[web] Opening PDF for page rendering...")
-_pdf_doc = fitz.open(rag_engine.PDF_PATH)
-_page_cache: dict = {}
+print("[web] Initializing RAG engine (all editions)...")
+rag_engine.initialize()      # loads every edition in CORPUS
+print("[web] Opening PDFs for page rendering...")
+_pdf_docs: dict[str, fitz.Document] = {
+    ed: fitz.open(cfg["pdf"]) for ed, cfg in rag_engine.CORPUS.items()
+}
+_page_cache: dict = {}        # keyed by (edition, page, dpi)
 print(f"[web] Initializing SQLite at {DB_PATH}...")
 init_db()
+line_module.register(app)
+
+
+def _resolve_edition(value) -> str:
+    """Validate caller-supplied edition; fall back to DEFAULT_EDITION."""
+    if isinstance(value, str) and value in rag_engine.CORPUS:
+        return value
+    return rag_engine.DEFAULT_EDITION
 
 
 @app.get("/")
 def index():
-    return render_template("index.html", llm=rag_engine.LOCAL_LLM)
+    editions = [{"key": k, "label": v["label"]} for k, v in rag_engine.CORPUS.items()]
+    return render_template("index.html",
+                           llm=rag_engine.LOCAL_LLM,
+                           editions=editions,
+                           default_edition=rag_engine.DEFAULT_EDITION)
+
+
+@app.get("/api/editions")
+def api_editions():
+    return jsonify({
+        "default": rag_engine.DEFAULT_EDITION,
+        "editions": [{"key": k, "label": v["label"]}
+                     for k, v in rag_engine.CORPUS.items()],
+    })
 
 
 @app.post("/api/search")
@@ -87,9 +118,10 @@ def api_search():
     query = (data.get("query") or "").strip()
     if not query:
         return jsonify({"error": "empty query"}), 400
+    edition = _resolve_edition(data.get("edition"))
     t0 = time.time()
     try:
-        results = rag_engine.search(query, top_k=5)
+        results = rag_engine.search(query, top_k=5, edition=edition)
     except Exception as e:
         return jsonify({"error": f"search failed: {e}"}), 500
     elapsed_ms = int((time.time() - t0) * 1000)
@@ -97,8 +129,8 @@ def api_search():
     query_id = None
     try:
         cur = _db().execute(
-            "INSERT INTO queries (ts, query, llm_model, elapsed_ms, picks_json, client_ip, user_agent) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO queries (ts, query, llm_model, elapsed_ms, picks_json, "
+            "client_ip, user_agent, edition) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 datetime.now(timezone.utc).isoformat(timespec="seconds"),
                 query,
@@ -107,6 +139,7 @@ def api_search():
                 json.dumps(results, ensure_ascii=False),
                 request.headers.get("CF-Connecting-IP") or request.remote_addr or "",
                 (request.headers.get("User-Agent") or "")[:300],
+                edition,
             ),
         )
         _db().commit()
@@ -114,7 +147,7 @@ def api_search():
     except Exception as e:
         print(f"[db] insert failed: {e}")
 
-    return jsonify({"query": query, "query_id": query_id,
+    return jsonify({"query": query, "query_id": query_id, "edition": edition,
                     "elapsed_ms": elapsed_ms, "results": results})
 
 
@@ -142,25 +175,37 @@ def api_feedback():
     return jsonify({"ok": True})
 
 
-@app.get("/api/page_image/<int:page>.png")
-def api_page_image(page: int):
-    if page < 1 or page > len(_pdf_doc):
+def _serve_page_image(edition: str, page: int):
+    doc = _pdf_docs.get(edition)
+    if doc is None or page < 1 or page > len(doc):
         return "page not found", 404
     try:
         dpi = int(request.args.get("dpi", "110"))
     except ValueError:
         dpi = 110
     dpi = max(50, min(dpi, 300))
-    key = (page, dpi)
+    key = (edition, page, dpi)
     if key not in _page_cache:
-        pix = _pdf_doc[page - 1].get_pixmap(dpi=dpi)
+        pix = doc[page - 1].get_pixmap(dpi=dpi)
         _page_cache[key] = pix.tobytes("png")
     return send_file(io.BytesIO(_page_cache[key]), mimetype="image/png")
 
 
+@app.get("/api/page_image/<edition>/<int:page>.png")
+def api_page_image_edition(edition: str, page: int):
+    return _serve_page_image(_resolve_edition(edition), page)
+
+
+@app.get("/api/page_image/<int:page>.png")
+def api_page_image(page: int):
+    """Backward-compat: defaults to DEFAULT_EDITION."""
+    return _serve_page_image(rag_engine.DEFAULT_EDITION, page)
+
+
 @app.get("/api/pdf_meta")
 def api_pdf_meta():
-    return jsonify({"total_pages": len(_pdf_doc)})
+    edition = _resolve_edition(request.args.get("edition"))
+    return jsonify({"edition": edition, "total_pages": len(_pdf_docs[edition])})
 
 
 if __name__ == "__main__":
